@@ -23,6 +23,9 @@ public class MapCell {
 
     public boolean isTraversable() {
         // Celdas transitables road y safe zone
-        return type == TYPE_ROAD || type == TYPE_SAFE_ZONE ;
+        return type == TYPE_ROAD;
     }
+
+
+
 }

@@ -10,4 +10,9 @@
 				isReadOnly="false" 
 				converter="repast.simphony.parameter.StringConverterFactory$IntConverter"			
 	/>
+	<parameter name="secondsPerTick" displayName="Seconds per Tick" type="double"
+				defaultValue="1.0"
+				isReadOnly="false"
+				converter="repast.simphony.parameter.StringConverterFactory$DoubleConverter"
+	/>
 </parameters>
