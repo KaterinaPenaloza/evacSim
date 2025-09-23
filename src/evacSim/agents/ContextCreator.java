@@ -40,15 +40,14 @@ public class ContextCreator implements ContextBuilder {
     private ZoneAgent safeZone;
 
     // Grilla
- // Grilla: Calcular dinámicamente para celdas de ~5 metros
-    public static final double CELL_SIZE_METERS = 5.0; // Tamaño deseado de cada celda
+    public static final double CELL_SIZE_METERS = 5.0; // Tamaño de cada celda
     private static final int GRID_WIDTH;
     private static final int GRID_HEIGHT;
     
     /* centro viña*/
     private static final String INITIAL_ZONE_SHAPEFILE_PATH = "./data/POLYGON.shp";
     private static final String SAFE_ZONE_SHAPEFILE_PATH = "./data/Zones2.shp";
-    private static final String ROADS_SHAPEFILE_PATH = "./data/roads.shp";
+    private static final String ROADS_SHAPEFILE_PATH = "./data/roads.shp"; //agregarle un bound al road
 
     /*forestal*/ 
     //private static final String INITIAL_ZONE_SHAPEFILE_PATH = "./data/map_data_initial_zones.shp";
@@ -77,7 +76,7 @@ public class ContextCreator implements ContextBuilder {
     private static final double REF_LAT = (MIN_LATITUDE + MAX_LATITUDE) / 2;
     private static final double REF_LON = (MIN_LONGITUDE + MAX_LONGITUDE) / 2;
 
-    // Dimensiones del área en metros (calculadas una vez)
+    // Dimensiones del área en metros
     private static final double AREA_WIDTH_METERS;
     private static final double AREA_HEIGHT_METERS;
     private static final double[] REF_ECEF;
@@ -90,7 +89,7 @@ public class ContextCreator implements ContextBuilder {
         AREA_WIDTH_METERS = Math.toRadians(MAX_LONGITUDE - MIN_LONGITUDE) * Math.cos(refLatRad) * WGS84_A;
         AREA_HEIGHT_METERS = Math.toRadians(MAX_LATITUDE - MIN_LATITUDE) * WGS84_A;
         
-        // Calcular tamaño de grilla para celdas de ~5 metros
+        // Calcular tamaño de grilla para celdas de ~5 metros ~~~~~~~~~~~~~~~
         GRID_WIDTH = (int) Math.ceil(AREA_WIDTH_METERS / CELL_SIZE_METERS);
         GRID_HEIGHT = (int) Math.ceil(AREA_HEIGHT_METERS / CELL_SIZE_METERS);
         
@@ -101,9 +100,8 @@ public class ContextCreator implements ContextBuilder {
     private static Grid<MapCell> mapCellGrid;
     private static Grid<GisAgent> agentGrid;
 
-    /**
-     * Convierte coordenadas geográficas a ECEF
-     */
+   
+    /********  Convierte coordenadas geográficas a ECEF ******/
     private static double[] geoToECEF(double lat, double lon) {
         double latRad = Math.toRadians(lat);
         double lonRad = Math.toRadians(lon);
@@ -122,9 +120,7 @@ public class ContextCreator implements ContextBuilder {
         return new double[]{X, Y, Z};
     }
 
-    /**
-     * Convierte ECEF a coordenadas ENU usando punto de referencia
-     */
+    /******** Convierte ECEF a coordenadas ENU usando punto de referencia *******/
     private static double[] ecefToENU(double[] ecef, double[] refECEF, double refLat, double refLon) {
         double deltaX = ecef[0] - refECEF[0];
         double deltaY = ecef[1] - refECEF[1];
@@ -145,9 +141,7 @@ public class ContextCreator implements ContextBuilder {
         return new double[]{east, north, up};
     }
 
-    /**
-     * Convierte ENU a ECEF
-     */
+    /********* Convierte ENU a ECEF *******/
     private static double[] enuToECEF(double east, double north, double up, double[] refECEF, double refLat, double refLon) {
         double refLatRad = Math.toRadians(refLat);
         double refLonRad = Math.toRadians(refLon);
@@ -169,9 +163,7 @@ public class ContextCreator implements ContextBuilder {
         };
     }
 
-    /**
-     * Convierte ECEF a coordenadas geográficas
-     */
+    /******** Convierte ECEF a coordenadas geográficas *******/
     private static double[] ecefToGeo(double[] ecef) {
         double X = ecef[0];
         double Y = ecef[1];
@@ -179,8 +171,6 @@ public class ContextCreator implements ContextBuilder {
         
         double p = Math.sqrt(X * X + Y * Y);
         double lon = Math.atan2(Y, X);
-        
-        // Iteración para latitud (método mejorado)
         double lat = Math.atan2(Z, p * (1 - WGS84_E2));
         double h = 0;
         
@@ -190,13 +180,10 @@ public class ContextCreator implements ContextBuilder {
             h = p / Math.cos(lat) - N;
             lat = Math.atan2(Z, p * (1 - WGS84_E2 * N / (N + h)));
         }
-        
         return new double[]{Math.toDegrees(lat), Math.toDegrees(lon), h};
     }
 
-    /**
-     * Conversión mejorada de coordenadas geográficas a grilla
-     */
+    /******* Conversión de coordenadas geográficas a grilla ******/
     public static GridPoint mapGeoToGrid(Coordinate geoCoord) {
         double[] pointECEF = geoToECEF(geoCoord.y, geoCoord.x);
         double[] enu = ecefToENU(pointECEF, REF_ECEF, REF_LAT, REF_LON);
@@ -205,20 +192,16 @@ public class ContextCreator implements ContextBuilder {
         double normX = (enu[0] + AREA_WIDTH_METERS / 2) / AREA_WIDTH_METERS;
         double normY = (enu[1] + AREA_HEIGHT_METERS / 2) / AREA_HEIGHT_METERS;
         
-        // Mapear a grilla (usar GRID_WIDTH directamente)
+        // Mapear a grilla
         int gridX = (int) Math.round(normX * GRID_WIDTH);
         int gridY = (int) Math.round(normY * GRID_HEIGHT);
-        
-        // Asegurar límites
         gridX = Math.max(0, Math.min(gridX, GRID_WIDTH - 1));
         gridY = Math.max(0, Math.min(gridY, GRID_HEIGHT - 1));
         
         return new GridPoint(gridX, gridY);
     }
 
-    /**
-     * Conversión mejorada de coordenadas de grilla a geográficas
-     */
+    /****** Conversión de coordenadas de grilla a geográficas ******/
     public static Coordinate mapGridToGeo(int gridX, int gridY) {
         // Usar centro de la celda para mayor precisión
         double normX = (gridX + 0.5) / GRID_WIDTH;
@@ -270,9 +253,7 @@ public class ContextCreator implements ContextBuilder {
         }
     }
 
-    /**
-     * Calcula distancia aproximada entre dos coordenadas en metros
-     */
+    /**+**  Calcula distancia aproximada entre dos coordenadas en metros ******/
     private static double distanceInMeters(Coordinate c1, Coordinate c2) {
         double[] ecef1 = geoToECEF(c1.y, c1.x);
         double[] ecef2 = geoToECEF(c2.y, c2.x);
@@ -284,9 +265,7 @@ public class ContextCreator implements ContextBuilder {
         return Math.sqrt(dx*dx + dy*dy + dz*dz);
     }
 
-    /**
-     * Calcula distancia usando la fórmula Haversine
-     */
+    /***** Calcula distancia usando la fórmula Haversine ******/
     private static double haversineDistance(Coordinate c1, Coordinate c2) {
         double lat1 = Math.toRadians(c1.y);
         double lon1 = Math.toRadians(c1.x);
@@ -297,7 +276,7 @@ public class ContextCreator implements ContextBuilder {
         double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
                    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return 6371000 * c; // Radio promedio de la Tierra en metros
+        return 6371000 * c;
     }
 
     // Obtener MapCell
