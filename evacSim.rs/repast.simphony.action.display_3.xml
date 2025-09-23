@@ -8,7 +8,7 @@
     </entry>
     <entry>
       <string>evacSim.agents.ZoneAgent</string>
-      <string>repast.simphony.visualization.gis3D.style.EditedSurfaceShapeStyle</string>
+      <string>evacSim.styles.ZoneStyle</string>
     </entry>
   </styles>
   <editedStyles>

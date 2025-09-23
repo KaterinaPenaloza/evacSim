@@ -19,7 +19,7 @@ import repast.simphony.visualization.gis3D.PlaceMark;
 import repast.simphony.visualization.gis3D.style.MarkStyle;
 
 /**
- * 
+ *
  * Style for GisAgents.  This demo style changes the appearance of the GisAgents
  * based on their water value.
  * @author Eric Tatara

@@ -1,16 +1,5 @@
 package evacSim.agents;
 
-import org.locationtech.jts.geom.Geometry;
-
-import repast.simphony.context.Context;
-import repast.simphony.engine.environment.RunEnvironment;
-import repast.simphony.engine.schedule.ScheduledMethod;
-import repast.simphony.gis.util.GeometryUtil;
-import repast.simphony.parameter.Parameters;
-import repast.simphony.space.gis.Geography;
-import repast.simphony.util.ContextUtils;
-
-
 /**
  * BufferZoneAagent is a geolocated agent indicated by a polygon feature that
  *  represents a buffer around a ZoneAgetn.
