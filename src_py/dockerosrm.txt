@@ -1,0 +1,6 @@
+docker run -t -v "C:/Users/K4tz3wy/PycharmProjects/PythonProject/.venv/src_py:/data" osrm/osrm-backend bash -c "osrm-extract /data/map.pbf -p /data/foot.lua"
+
+
+docker run -t -v "C:/Users/K4tz3wy/PycharmProjects/PythonProject/.venv/src_py:/data" osrm/osrm-backend bash -c "osrm-contract /data/map.osrm"
+
+docker run -t -i -p 5000:5000 -v "C:/Users/K4tz3wy/PycharmProjects/PythonProject/.venv/src_py:/data" osrm/osrm-backend osrm-routed /data/map.osrm
