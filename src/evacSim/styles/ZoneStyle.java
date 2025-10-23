@@ -7,8 +7,7 @@ import gov.nasa.worldwind.render.SurfacePolygon;
 import gov.nasa.worldwind.render.SurfaceShape;
 import repast.simphony.visualization.gis3D.style.SurfaceShapeStyle;
 
-
-public class ZoneStyle implements SurfaceShapeStyle<ZoneAgent>{
+public class ZoneStyle implements SurfaceShapeStyle<ZoneAgent> {
 
 	@Override
 	public SurfaceShape getSurfaceShape(ZoneAgent object, SurfaceShape shape) {
@@ -33,16 +32,16 @@ public class ZoneStyle implements SurfaceShapeStyle<ZoneAgent>{
 
 	@Override
 	public Color getLineColor(ZoneAgent obj) {
-	    return Color.BLACK;
+		return Color.BLACK;
 	}
 
 	@Override
 	public double getLineOpacity(ZoneAgent obj) {
-	    return 0.5;
+		return 0.5;
 	}
 
 	@Override
 	public double getLineWidth(ZoneAgent obj) {
-	    return 2.0;
+		return 2.0;
 	}
 }

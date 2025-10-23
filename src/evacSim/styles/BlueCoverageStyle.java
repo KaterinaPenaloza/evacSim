@@ -12,8 +12,9 @@ import org.geotools.styling.Symbolizer;
 
 import repast.simphony.visualization.gis3D.style.CoverageStyle;
 
-/** puede servir
- * Coverage style that colors the elements from white to blue based on value.
+/**
+ * puede servir Coverage style that colors the elements from white to blue based
+ * on value.
  *
  *
  * @author Eric Tatara
@@ -34,35 +35,35 @@ public class BlueCoverageStyle<T> implements CoverageStyle<T> {
 			}
 		}
 
-		public List<Symbolizer> getSymbolizers(){
+		public List<Symbolizer> getSymbolizers() {
 			return symbs;
 		}
 	}
 
 	@Override
 	public RasterSymbolizer getSymbolizer() {
-		 // Blue colormap
-		 ColorMapBuilder cm = new ColorMapBuilder();
+		// Blue colormap
+		ColorMapBuilder cm = new ColorMapBuilder();
 
-		 cm.entry().quantity(0).colorHex("#ffffff");
-		 cm.entry().quantity(1).colorHex("#f7fbff");
-		 cm.entry().quantity(2).colorHex("#deebf7");
-		 cm.entry().quantity(3).colorHex("#c6dbef");
-		 cm.entry().quantity(4).colorHex("#9ecae1");
-		 cm.entry().quantity(5).colorHex("#6baed6");
-		 cm.entry().quantity(6).colorHex("#4292c6");
-		 cm.entry().quantity(7).colorHex("#2171b5");
-		 cm.entry().quantity(8).colorHex("#08519c");
-		 cm.entry().quantity(9).colorHex("#08306b");
+		cm.entry().quantity(0).colorHex("#ffffff");
+		cm.entry().quantity(1).colorHex("#f7fbff");
+		cm.entry().quantity(2).colorHex("#deebf7");
+		cm.entry().quantity(3).colorHex("#c6dbef");
+		cm.entry().quantity(4).colorHex("#9ecae1");
+		cm.entry().quantity(5).colorHex("#6baed6");
+		cm.entry().quantity(6).colorHex("#4292c6");
+		cm.entry().quantity(7).colorHex("#2171b5");
+		cm.entry().quantity(8).colorHex("#08519c");
+		cm.entry().quantity(9).colorHex("#08306b");
 
-     Style style = cm.buildStyle();
+		Style style = cm.buildStyle();
 
-     SymbolizerCollector collector = new SymbolizerCollector();
-     style.accept(collector);
+		SymbolizerCollector collector = new SymbolizerCollector();
+		style.accept(collector);
 
-     RasterSymbolizer sym = (RasterSymbolizer)collector.getSymbolizers().get(0);
+		RasterSymbolizer sym = (RasterSymbolizer) collector.getSymbolizers().get(0);
 
-     return sym;
+		return sym;
 	}
 
 	@Override

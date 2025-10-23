@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-
-<Scenario simphonyVersion="2.8.0">
-<repast.simphony.dataLoader.engine.ClassNameDataLoaderAction context="evacSim" file="repast.simphony.dataLoader.engine.ClassNameDataLoaderAction_0.xml" />
-<repast.simphony.action.display context="evacSim" file="repast.simphony.action.display_1.xml" />
-<repast.simphony.action.display context="evacSim" file="repast.simphony.action.display_3.xml" />
+<Scenario simphonyVersion="2.11.0">
+    <repast.simphony.dataLoader.engine.ClassNameDataLoaderAction context="evacSim" file="repast.simphony.dataLoader.engine.ClassNameDataLoaderAction_0.xml" />
+    <repast.simphony.action.display context="evacSim" file="repast.simphony.action.display_1.xml" />
+    <repast.simphony.action.display context="evacSim" file="repast.simphony.action.display_3.xml" />
+ 	<repast.simphony.action.chart context="evacSim" file="repast.simphony.action.data_set_TotalEvacTimes.xml" />
+    <repast.simphony.action.chart context="evacSim" file="repast.simphony.action.chart_BoxplotTotalTime.xml" />
 </Scenario>

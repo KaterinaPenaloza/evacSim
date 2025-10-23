@@ -24,352 +24,467 @@ import repast.simphony.space.grid.GridPoint;
 import repast.simphony.util.ContextUtils;
 
 public class GisAgent {
-
-	/********** Atributos ***********/
-    // Atributos del agente (faltan mas)
     private String name;
     private ZoneAgent targetSafeZone;
+    private double speed;  // m/s
     
-    // Velocidad del agente celdas/segundo
-    private double speed;					// velocidad fija de momento (1,4 m/s)
-    private double distanceAccumulated = 0; // acumular fracciones de celdas
-    
-    // Variables de tiempo
-    private int evacuationStartTick = -1;
-    private int evacuationEndTick = -1;
+    private int cellsMoved = 0;
+    private double distanceAccumulated = 0;
+
     private boolean evacuationStarted = false;
-    private double secondsPerTick;
+    private double secondsPerTick = 0.5;
     
-    // Geografia del agente
+    // Tiempos
+    private int totalStartTick = -1;
+    private int movementStartTick = -1;
+    private int evacuationEndTick = -1;
+
+    // Métricas derivadas
+    private double preMovementTime = 0.0;
+    private double movementTime = 0.0;
+    private double evacuationTime = 0.0;
+    
+    private int preEvacuationTicks = 0;  // Tiempo aleatorio antes de empezar a moverse
+    private boolean preEvacuationComplete = false;
+    private boolean isInitialized = false;
+   
     public Geography<GisAgent> geography;
-    private Grid<MapCell> mapCellGrid;
-    private Grid<GisAgent> agentGrid;		// Movimiento y posición de los agentes
+    private Map<ContextCreator.GridPoint, Integer> mapCellGrid;
+    private Grid<GisAgent> agentGrid;
     private GeometryFactory geometryFactory = new GeometryFactory();
-    private Random random = new Random();
-
-    // Pathfinding
-    public GridPoint safeZoneGridTarget;	// Objetivo de la zona segura
-    private List<GridPoint> currentPath;	// Camino calculado por A*
+    public ContextCreator.GridPoint safeZoneGridTarget;
+    private List<ContextCreator.GridPoint> currentPath;
     private int pathIndex;
-
-    // Estados de evacuación
+    
     private boolean isEvacuated = false;
-    private boolean inSafeZone = false;
-    private List<GridPoint> safeZonePoints = new ArrayList<>();
-
-    // Control de recálculos (arreglar)
+    private boolean hasReachedFinalTarget = false;
     private int recalculationCount = 0;
     private int waitTicks = 0;
     private static final int MAX_RECALCULATIONS = 2;
-
+    // Sistema de espera antes de recalcular ruta
+    private int waitingAttempts = 0;
+    private static final int MAX_WAITING_ATTEMPTS = 5; // Intentos antes de recalcular
+    private ContextCreator.GridPoint blockedPoint = null;
     
-    public GisAgent(String name, ZoneAgent targetSafeZone, Grid<MapCell> mapCellGrid, Grid<GisAgent> agentGrid) {
+    private Random random = new Random();
+    
+    
+    public GisAgent(String name, ZoneAgent targetSafeZone, Map<ContextCreator.GridPoint, Integer> mapCellGrid,
+            Grid<GisAgent> agentGrid, int preEvacMinSeconds, int preEvacMaxSeconds) {
         this.name = name;
         this.targetSafeZone = targetSafeZone;
         this.mapCellGrid = mapCellGrid;
         this.agentGrid = agentGrid;
-        this.secondsPerTick = (Double) RunEnvironment.getInstance().getParameters().getValue("secondsPerTick");
-        this.speed = 1.4; // Velocidad promedio de caminata
-        this.setCurrentPath(new ArrayList<>());
-        this.setPathIndex(0);
+        this.currentPath = new ArrayList<>();
+        this.pathIndex = 0;
+        this.speed = ContextCreator.getSpeedByDistribution(random);
+        // Tiempo de pre-evacuación aleatorio
+        // Convertir segundos a ticks (2 ticks = 1 segundo)
+        int minTicks = preEvacMinSeconds * 2;
+        int maxTicks = preEvacMaxSeconds * 2;
+        
+        this.preEvacuationTicks = minTicks + random.nextInt(maxTicks - minTicks + 1);
     }
 
-    
-    /* Step method */
+	// ========================================
+	// |         step() método principal      |
+	// ========================================
     @ScheduledMethod(start = 1, interval = 1, priority = ScheduleParameters.FIRST_PRIORITY)
     public void step() {
-        if (isEvacuated) {
-			return; // (deberia terminar la simulación(?)
-		}
+    	
+    	// 0) Inicializar (geography y target)
+    	if (!isInitialized) {
+            if (!performInitialization()) {
+                return;
+            }
+        }
+    	
+    	// 1) Pre movimiento
+    	if (!handlePreEvacuation()) {
+            return;
+        }
+    	
+    	// 2) Iniciar cronometro de evacuación
+        initializeEvacuationTimer();
+        
+        // 3) Obtener posicion del agente
+        ContextCreator.GridPoint currentPoint = getCurrentGridPoint();
+        if (currentPoint == null) {
+            System.err.println("DEBUG (GisAgent " + name + "): No se pudo obtener la posición del agente.");
+            return;
+        }
+
+        // 4) Verificar si llego a la zona segura (marcar como evacuado)
+        if (!isEvacuated && isInSafeZone(currentPoint)) {
+            isEvacuated = true;
+            ContextCreator.incrementEvacuated();
+            evacuationEndTick = (int) RepastEssentials.GetTickCount();
             
-        // Inicio de evacuación
-        if (!evacuationStarted) {
-            evacuationStartTick = (int) RepastEssentials.GetTickCount();
-            evacuationStarted = true;
+            // Cálculos de tiempo
+            int preTicks = movementStartTick - totalStartTick;
+            int moveTicks = evacuationEndTick - movementStartTick;
+            int totalTicks = evacuationEndTick - totalStartTick;
+
+            preMovementTime = preTicks * secondsPerTick;
+            movementTime = moveTicks * secondsPerTick;
+            evacuationTime = totalTicks * secondsPerTick;
+
+            double distanceMovedMeters = cellsMoved * ContextCreator.CELL_SIZE_METERS;
+
+            System.out.printf(
+                "DEBUG (GisAgent %s): EVACUADO | Pre-mov: %.2f s | Mov: %.2f s | Total: %.2f s | Dist: %.1f m%n",
+                name, preMovementTime, movementTime, evacuationTime, distanceMovedMeters
+            );
         }
         
-        // Iniciar geografia
+        
+        // 5) Verificar si llegó al target final
+        if (hasReachedTarget(currentPoint)) {
+            if (!hasReachedFinalTarget) {
+                hasReachedFinalTarget = true;
+                ContextCreator.incrementReachedTarget();
+                if (isEvacuated && evacuationTime > 0) {
+                    EvacuationData.recordAgentTimes(name, preMovementTime, movementTime, evacuationTime);
+                    System.out.printf(
+                        "DEBUG (GisAgent %s): DATOS REGISTRADOS | Pre: %.2f s | Mov: %.2f s | Total: %.2f s%n",
+                        name, preMovementTime, movementTime, evacuationTime
+                    );
+                }
+            }
+            return; // Dejar de moverse
+        }
+        
+        if (hasReachedTarget(currentPoint)) {
+            return;
+        }
+
+        // 6) Verificar tiempo de espera
+        if (handleWaitTicks()) {
+            return;
+        }
+
+        // 7) Acumular distancia
+        accumulateDistance();
+        
+        if (!isEnoughDistance()) {
+            return;
+        }
+
+        // 8) Continuar moviéndose hacia el target
+        moveAlongCalculatedPath(currentPoint);
+    }
+
+    /**** 0) Inicializacion del agente ****/
+    private boolean performInitialization() {
+        System.out.println("DEBUG (GisAgent " + name + "): Inicialización de agente");
+        
+        // Obtener contexto y geografía
+        if (!initializeGeography()) return false;
+        if (!assignSafeZoneTarget()) return false;
+        
+        // Tiempo
+        if (totalStartTick < 0) {
+            totalStartTick = (int) RepastEssentials.GetTickCount();
+        }
+        
+        // Marcar como inicializado
+        isInitialized = true;
+        return true;
+    }
+    
+    /**** 0.1) Inicializar agentes en la grilla ****/
+    private boolean initializeGeography() {
         if (geography == null) {
             Context context = ContextUtils.getContext(this);
-            geography = (Geography)context.getProjection("Geography");
+            geography = (Geography) context.getProjection("Geography");
         }
-
-        GridPoint currentAgentGridPoint = agentGrid.getLocation(this);
-        if (currentAgentGridPoint == null) {
-            System.err.println("DEBUG (GisAgent " + name + "): No se pudo obtener la posición del agente en la grilla de agentes.");
-            return;
-        }
-
-        if (safeZonePoints.isEmpty()) {
-            findSafeZonePoints();
-        }
-
-        /********** Zona segura **********/
-        // LLegar a la zona segura
-        if (!inSafeZone && isInSafeZone(currentAgentGridPoint)) {
-            inSafeZone = true;
-            int currentTick = (int) RepastEssentials.GetTickCount();
+        return geography != null;
+    }
+    
+    /**** 0.2) Asignar target ****/
+    private boolean assignSafeZoneTarget() {
+        if (safeZoneGridTarget == null) {
+        	safeZoneGridTarget = ContextCreator.getSafeZoneTarget();
+        	
+        	if (safeZoneGridTarget == null) {
+                System.err.println("DEBUG (GisAgent " + name + "): No se pudo obtener un punto target válido.");
+                return false;
+            }
             
-            // Cambiar objetivo a punto de dispersión dentro de zona segura (revisar)
-            GridPoint dispersionPoint = selectDispersionPoint();
-            if (dispersionPoint != null && !dispersionPoint.equals(currentAgentGridPoint)) {
-                safeZoneGridTarget = dispersionPoint;
-                getCurrentPath().clear(); // recalculo de path
-                setPathIndex(0);
-                System.out.println("DEBUG (GisAgent " + name + "): Llegó a zona segura, dispersándose a: " + safeZoneGridTarget);
+        	System.out.println("DEBUG (GisAgent " + name + "): Objetivo asignado a punto: (" + 
+                    safeZoneGridTarget.getX() + ", " + safeZoneGridTarget.getY() + ")");
+        }
+        return true;
+    }
+    
+    /**** 1) Premovimiento ****/
+    private boolean handlePreEvacuation() {
+        if (!preEvacuationComplete) {
+            if (preEvacuationTicks > 0) {
+                preEvacuationTicks--;
+                return false; // Aun no empieza a evacuar
             } else {
-                // Si ya está en una buena posición o no hay mejor lugar, terminar evacuacion
-                isEvacuated = true;
-                safeZoneGridTarget = null;
-                getCurrentPath().clear();
-                setPathIndex(0);
-             
-                evacuationEndTick = currentTick;
-                int evacuationTimeTicks = evacuationEndTick - evacuationStartTick;
-                double evacuationTimeSeconds = evacuationTimeTicks * secondsPerTick;
-                System.out.println("DEBUG (GisAgent " + name + "): Evacuación completada inmediatamente - Tiempo: " + evacuationTimeTicks + " ticks (" + String.format("%.2f", evacuationTimeSeconds) + " segundos)");
-                return;
+                preEvacuationComplete = true;
+                System.out.println("DEBUG (GisAgent " + name + "): Iniciando evacuación.");
             }
         }
-
-        // Determinar punto objetivo en zona segura (entonces para que se dispersan?)
-        if (!inSafeZone && safeZoneGridTarget == null) {
-            try {
-            	safeZoneGridTarget = selectRandomSafePoint();
-                if (safeZoneGridTarget != null) {
-                    System.out.println("DEBUG (GisAgent " + name + "): Objetivo de zona segura en grilla establecido: (" + safeZoneGridTarget.getX() + ", " + safeZoneGridTarget.getY() + ")");
-                } else {
-                    System.err.println("DEBUG (GisAgent " + name + "): No se pudo encontrar punto seguro accesible.");
-                    return;
-                }
-            } catch (Exception e) {
-                System.err.println("Error al intentar obtener objetivo de zona segura: " + e.getMessage());
-                return;
-            }
-        }
-
-        if (safeZoneGridTarget != null) {
-            moveAlongCalculatedPath();
-            // Verificar si completó la evacuación (llegó al punto de dispersión)
-            if (inSafeZone && currentAgentGridPoint.equals(safeZoneGridTarget)) {
-                isEvacuated = true;
-                safeZoneGridTarget = null;
-                getCurrentPath().clear();
-                setPathIndex(0);
-                evacuationEndTick = (int) RepastEssentials.GetTickCount();
-                int evacuationTimeTicks = evacuationEndTick - evacuationStartTick;
-                double evacuationTimeSeconds = evacuationTimeTicks * secondsPerTick;
-                System.out.println("DEBUG (GisAgent " + name + "): Evacuación completada - llegó al punto de dispersión - Tiempo: " + 
-                    evacuationTimeTicks + " ticks (" + String.format("%.2f", evacuationTimeSeconds) + " segundos)");
-            }
+        return true;
+    }
+    
+    /**** 2) Inicializar tiempo de evacuación ****/
+    private void initializeEvacuationTimer() {
+        if (!evacuationStarted) {
+        	movementStartTick = (int) RepastEssentials.GetTickCount(); // Inicio de movimiento
+            evacuationStarted = true;
         }
     }
+    
 
-    /********** Pathfinding **********/ 
-    /* (optimizar y arreglar xc)
-     * cambiar a cola de prioridad en vez de lista y cambiar la busqueda de nodos
-     * implementar el sfm en vez de desviarse y wait
-     * precomputar zonas seguras
-     */
-    private void moveAlongCalculatedPath() {
-        GridPoint currentAgentGridPoint = agentGrid.getLocation(this);
-
-        if (currentAgentGridPoint == null) {
-            System.err.println("DEBUG (GisAgent " + name + "): No se pudo obtener la posición del agente en la grilla de agentes.");
-            return;
-        }
-
-        // Verificar si debe esperar antes de recalcular
+    /**** 5) Si llegó al target ****/
+    private boolean hasReachedTarget(ContextCreator.GridPoint currentPosition) {
+        double distanceToTarget = calculateHeuristic(currentPosition, safeZoneGridTarget);
+        return distanceToTarget <= 1.0;
+    }
+    
+    /**** 6) WaitTicks ****/
+    private boolean handleWaitTicks() {
         if (waitTicks > 0) {
             waitTicks--;
-            return;
+            return true;
         }
-
-        // Si ya llegamos al objetivo, no recalcular
-        if (currentAgentGridPoint.equals(safeZoneGridTarget)) {
-            return; // Ya llegó
-        }
-
-        // Si el camino actual está terminado/vacío, o si nos desviamos, recalcular
-        if (getCurrentPath().isEmpty() ||
-            getPathIndex() >= getCurrentPath().size() ||
-            (getPathIndex() < getCurrentPath().size() && !getCurrentPath().get(getPathIndex()).equals(currentAgentGridPoint))) {
-            calculatePathToSafeZone(currentAgentGridPoint, safeZoneGridTarget);
-        }
-
-        // No hay ruta posible
-        if (getCurrentPath().isEmpty()) {
-            System.err.println("DEBUG (GisAgent " + name + "): No se pudo encontrar un camino transitable.");
-            recalculationCount++;
-            if (recalculationCount > MAX_RECALCULATIONS) {
-                waitTicks = 3 + random.nextInt(10); // Esperar 3-12 ticks
-                recalculationCount = 0;
-                System.out.println("DEBUG (GisAgent " + name + "): Demasiados recálculos fallidos. Esperando " + waitTicks + " ticks.");
-            }
-            return;
-        }
-
-        GridPoint nextGridPoint;
-
-        // Lógica de seguimiento de path
-        if (currentAgentGridPoint.equals(getCurrentPath().get(getCurrentPath().size() - 1))) {
-            nextGridPoint = currentAgentGridPoint;
-        } else if (getPathIndex() + 1 < getCurrentPath().size()) {
-            if (currentAgentGridPoint.equals(getCurrentPath().get(getPathIndex()))) {
-                setPathIndex(getPathIndex() + 1);
-                nextGridPoint = getCurrentPath().get(getPathIndex());
-            } else {
-                setPathIndex(0);
-                nextGridPoint = getCurrentPath().get(getPathIndex());
-                System.out.println("DEBUG (GisAgent " + name + "): Agente desviado o camino recalculado. Reiniciando pathIndex y moviendo al primer paso: " + nextGridPoint);
-            }
-        } else {
-            System.err.println("DEBUG (GisAgent " + name + "): Error de lógica en pathIndex (fuera de límites). Recalculando camino.");
-            calculatePathToSafeZone(currentAgentGridPoint, safeZoneGridTarget);
-            if (!getCurrentPath().isEmpty()) {
-                setPathIndex(0);
-                nextGridPoint = getCurrentPath().get(getPathIndex());
-            } else {
-                return;
-            }
-        }
-
-        // Calcular distancia recorrida en el tick
+        return false;
+    }
+    
+    /**** 7) Acumular distancia ****/
+    private void accumulateDistance() {
         double distancePerTick = speed * secondsPerTick;
         distanceAccumulated += distancePerTick;
-        // Verificar si hay suficiente distancia acumulada para moverse a la siguiente celda
-        // se acumula hasta 5 metros (tamaño de la celda) antes de avanzar, equivalente a unos 3 o 4 segundos por 1,4 m/s
-        if (distanceAccumulated >= ContextCreator.CELL_SIZE_METERS && isValidStep(nextGridPoint)) {
-            agentGrid.moveTo(this, nextGridPoint.getX(), nextGridPoint.getY());
-            Coordinate newGeoCoord = ContextCreator.mapGridToGeo(nextGridPoint.getX(), nextGridPoint.getY());
-            geography.move(this, geometryFactory.createPoint(newGeoCoord));
-            distanceAccumulated -= ContextCreator.CELL_SIZE_METERS;
-            recalculationCount = 0;
-            System.out.println("DEBUG (GisAgent " + name + "): Distancia acumulada restante: " + String.format("%.2f", distanceAccumulated) + " m");
-        } else if (distanceAccumulated < ContextCreator.CELL_SIZE_METERS) {
-            System.out.println("DEBUG (GisAgent " + name + "): Acumulado " + String.format("%.2f", distanceAccumulated));
-        } else {
-            System.err.println("DEBUG (GisAgent " + name + "): Siguiente paso (" + nextGridPoint + ") no transitable o muy congestionado. Recalculando camino.");
-            recalculationCount++;
-            if (recalculationCount > MAX_RECALCULATIONS) {
-                waitTicks = 5 + random.nextInt(10);
-                recalculationCount = 0;
-                System.out.println("DEBUG (GisAgent " + name + "): Demasiada congestión. Esperando " + waitTicks + " ticks.");
-                return;
+    }
+    
+    /**** Verificar si acumuló suficiente distancia para moverse ****/
+    private boolean isEnoughDistance() {
+        return distanceAccumulated >= ContextCreator.CELL_SIZE_METERS;
+    }
+   
+    /**** 8) Moverse por el camino ****/
+    private void moveAlongCalculatedPath(ContextCreator.GridPoint currentPoint) {
+        
+        //********* moverse al objetivo ********/
+        // Validar si necesita recalcular el camino
+        if (needsPathRecalculation(currentPoint)) {
+            calculatePathToSafeZone(currentPoint, safeZoneGridTarget);
+            waitingAttempts = 0; // Resetear intentos al calcular nuevo camino
+            blockedPoint = null;
+        }
+        
+        // Si no hay camino disponible, manejar el error
+        if (currentPath.isEmpty()) {
+            handleNoPathAvailable();
+            return;
+        }
+        
+        // Obtener el siguiente punto
+        ContextCreator.GridPoint nextPoint = getNextPointInPath(currentPoint);
+        if (nextPoint == null) {
+            return;
+        }
+        
+        // Intentar mover si acumuló suficiente distancia
+        if (isEnoughDistance()) {
+            if (isValidStep(nextPoint)) {
+                // Camino libre, moverse
+                moveAgent(nextPoint);
+                waitingAttempts = 0; // Resetear intentos
+                blockedPoint = null;
+            } else {
+                // Camino bloqueado, esperar antes de recalcular
+                handleBlockedPath(currentPoint, nextPoint);
             }
-            calculatePathToSafeZone(currentAgentGridPoint, safeZoneGridTarget);
-        }
-	}
-
-    
-    // Puntos del camino
-    public GridPoint getNextPathPoint() {
-        if (currentPath.isEmpty() || pathIndex >= currentPath.size()) {
-            return null;
-        }
-        return currentPath.get(pathIndex);
-    }
-
-    public void advancePathIndex() {
-        if (pathIndex < currentPath.size()) {
-            pathIndex++;
         }
     }
+
+    /**** 8.1) ****/
+    private boolean needsPathRecalculation(ContextCreator.GridPoint currentPosition) {
+        return currentPath.isEmpty() 
+            || pathIndex >= currentPath.size()
+            || (pathIndex < currentPath.size() && !currentPath.get(pathIndex).equals(currentPosition));
+    }
     
-    // Calculo del camino usando A*
-    public void calculatePathToSafeZone(GridPoint start, GridPoint target) {
-        getCurrentPath().clear();
-        setPathIndex(0);
-
-        if (start == null || target == null) {
-            System.err.println("Error: Start o Target nulo.");
+    /**** 8.2) ****/
+    private void handleNoPathAvailable() {
+        System.err.println("DEBUG (GisAgent " + name + "): No se pudo encontrar un camino transitable.");
+        recalculationCount++;
+        if (recalculationCount > MAX_RECALCULATIONS) {
+            waitTicks = 3 + random.nextInt(10);
+            recalculationCount = 0;
+            System.out.println("DEBUG (GisAgent " + name + "): Demasiados recálculos fallidos. Esperando "
+                    + waitTicks + " ticks.");
+        }
+    }
+    
+    /**** 8.3) ****/
+    private ContextCreator.GridPoint getNextPointInPath(ContextCreator.GridPoint currentPosition) {
+        // Si ya llegó al destino
+        if (currentPosition.equals(currentPath.get(currentPath.size() - 1))) {
+            return currentPosition;
+        }
+        
+        // Si hay más puntos en el camino
+        if (pathIndex + 1 < currentPath.size()) {
+            if (currentPosition.equals(currentPath.get(pathIndex))) {
+                pathIndex++;
+                return currentPath.get(pathIndex);
+            } else {
+                pathIndex = 0;
+                return currentPath.get(pathIndex);
+            }
+        }
+        
+        // Necesita recalcular
+        calculatePathToSafeZone(currentPosition, safeZoneGridTarget);
+        if (!currentPath.isEmpty()) {
+            pathIndex = 0;
+            return currentPath.get(pathIndex);
+        }
+        
+        return null;
+    }
+    
+    /**** 8.4) ****/
+    private void handleBlockedPath(ContextCreator.GridPoint currentPosition, ContextCreator.GridPoint blockedNext) {
+        // Si es el mismo punto bloqueado, incrementar contador
+        if (blockedPoint != null && blockedPoint.equals(blockedNext)) {
+            waitingAttempts++;
+        } else {
+            // Nuevo obstáculo, resetear contador
+            blockedPoint = blockedNext;
+            waitingAttempts = 1;
+        }
+        
+        // Si aún no ha esperado suficiente, solo esperar
+        if (waitingAttempts < MAX_WAITING_ATTEMPTS) {
+            // Consumir parte de la distancia acumulada para simular intento de movimiento
+            distanceAccumulated = Math.max(0, distanceAccumulated - (ContextCreator.CELL_SIZE_METERS * 0.5));
             return;
         }
-        if (start.equals(target)) {
-            getCurrentPath().add(start);
-            System.out.println("DEBUG (GisAgent " + name + "): Punto de inicio = punto destino. No se calcula camino.");
+        
+        // Ya esperó suficiente, intentar recalcular
+        System.out.println("DEBUG (GisAgent " + name + "): Esperó " + waitingAttempts + " intentos. Buscando camino alternativo.");
+        recalculationCount++;
+        
+        if (recalculationCount > MAX_RECALCULATIONS) {
+            // Demasiadas recalculaciones, esperar más tiempo (detención completa)
+            waitTicks = 8 + random.nextInt(15);
+            recalculationCount = 0;
+            waitingAttempts = 0;
+            blockedPoint = null;
+            System.out.println("DEBUG (GisAgent " + name + "): Demasiada congestión. Esperando " + waitTicks + " ticks.");
+            return;
+        }
+        
+        // Recalcular camino
+        calculatePathToSafeZone(currentPosition, safeZoneGridTarget);
+        waitingAttempts = 0;
+        blockedPoint = null;
+    }
+    
+    
+    // ========================================
+   	// |             PATHFINDING              |
+   	// ========================================
+    public void calculatePathToSafeZone(ContextCreator.GridPoint start, ContextCreator.GridPoint target) {
+    	// Reiniciar el camino
+        currentPath.clear();
+        pathIndex = 0;
+
+        // Validar entradas
+        if (!validatePathfindingInputs(start, target)) {
             return;
         }
 
-        Map<GridPoint, GridPoint> cameFrom = new HashMap<>();
-        Map<GridPoint, Double> gScore = new HashMap<>();
-        Map<GridPoint, Double> fScore = new HashMap<>();
+        // Inicializar estructuras
+        Map<ContextCreator.GridPoint, ContextCreator.GridPoint> cameFrom = new HashMap<>();
+        Map<ContextCreator.GridPoint, Double> gScore = new HashMap<>(); // Costo desde el inicio
+        Map<ContextCreator.GridPoint, Double> fScore = new HashMap<>(); // gScore + heurística
+        List<ContextCreator.GridPoint> openList = new ArrayList<>(); // Nodos a explorar
 
-        List<GridPoint> openList = new ArrayList<>();
-
+        // Inicializar punto de inicio
         gScore.put(start, 0.0);
         fScore.put(start, calculateHeuristic(start, target));
         openList.add(start);
 
-        GridPoint closestToTargetSoFar = start;
+        // Encontrar un camino parcial si no se puede llegar la destino //***Revisar esto***
+        ContextCreator.GridPoint closestToTargetSoFar = start;
         double minDistanceFromTarget = calculateHeuristic(start, target);
 
+        // Ejecutar el algoritmo para encontrar el camino
+        ContextCreator.GridPoint finalPoint = executePathFinding(target, cameFrom, gScore, fScore, openList, 
+                closestToTargetSoFar, minDistanceFromTarget);
+        
+
+        if (!finalPoint.equals(start)) {
+            currentPath = reconstructPath(cameFrom, finalPoint);
+        }
+    }
+
+    private ContextCreator.GridPoint executePathFinding(
+            ContextCreator.GridPoint target,
+            Map<ContextCreator.GridPoint, ContextCreator.GridPoint> cameFrom,
+            Map<ContextCreator.GridPoint, Double> gScore,
+            Map<ContextCreator.GridPoint, Double> fScore,
+            List<ContextCreator.GridPoint> openList,
+            ContextCreator.GridPoint closestToTargetSoFar,
+            double minDistanceFromTarget) {
+        
+        ContextCreator.GridPoint bestPoint = closestToTargetSoFar;
+        double bestDistance = minDistanceFromTarget;
+        
         while (!openList.isEmpty()) {
+            // Ordenar por fScore (punto con menor costo primero)
             Collections.sort(openList, Comparator.comparingDouble(fScore::get));
-            GridPoint current = openList.remove(0);
+            ContextCreator.GridPoint current = openList.remove(0);
 
+            // Actualizar el punto más cercano al destino
             double distCurrentToTarget = calculateHeuristic(current, target);
-            if (distCurrentToTarget < minDistanceFromTarget) {
-                minDistanceFromTarget = distCurrentToTarget;
-                closestToTargetSoFar = current;
+            if (distCurrentToTarget < bestDistance) {
+                bestDistance = distCurrentToTarget;
+                bestPoint = current;
             }
 
+            // Si llegamos al destino, terminar
             if (current.equals(target)) {
-                setCurrentPath(reconstructPath(cameFrom, current));
-                return;
+                return current;
             }
 
-            // Vecinos de la celda actual
-            for (GridPoint neighbor : getNeighbors(current)) {
-                // Obtener las dimensiones de la grilla desde mapCellGrid
-                int gridWidth = mapCellGrid.getDimensions().getWidth();
-                int gridHeight = mapCellGrid.getDimensions().getHeight();
-
-                // Asegurarse de que el vecino esté dentro de los límites de la grilla
-                if (neighbor.getX() < 0 || neighbor.getX() >= gridWidth ||
-                    neighbor.getY() < 0 || neighbor.getY() >= gridHeight) {
-                    continue;
-                }
-
-                // Usar mapCellGrid para consultar la transitabilidad del vecino
-                MapCell neighborCell = mapCellGrid.getObjectAt(neighbor.getX(), neighbor.getY());
-
-                // Solo consideramos vecinos transitables con control básico de aglomeración //revisar
-                if (neighborCell != null && neighborCell.isTraversable() && countAgentsAt(neighbor) < 4) {
-                    double tentativeGScore = gScore.getOrDefault(current, Double.POSITIVE_INFINITY) + 1;
-
-                    if (tentativeGScore < gScore.getOrDefault(neighbor, Double.POSITIVE_INFINITY)) {
-                        cameFrom.put(neighbor, current);
-                        gScore.put(neighbor, tentativeGScore);
-                        fScore.put(neighbor, tentativeGScore + calculateHeuristic(neighbor, target));
-
-                        if (!openList.contains(neighbor)) {
-                            openList.add(neighbor);
-                        }
-                    }
-                }
-            }
+            // Explorar vecinos del punto actual
+            exploreNeighbors(current, target, cameFrom, gScore, fScore, openList);
         }
-
-        // Si no se encontró un camino directo al target
-        if (!closestToTargetSoFar.equals(start)) {
-            setCurrentPath(reconstructPath(cameFrom, closestToTargetSoFar));
-            System.err.println("DEBUG (GisAgent " + this.name + "): No se pudo encontrar un camino directo al objetivo. Se encontró el camino al punto transitable más cercano: " + closestToTargetSoFar);
-        } else {
-            System.err.println("DEBUG (GisAgent " + this.name + "): No se pudo encontrar un camino a la zona segura para el agente.");
+        
+        return bestPoint;
+    }
+    
+    /*************** Valida las entradas del pathfinding ***************/
+    private boolean validatePathfindingInputs(ContextCreator.GridPoint start, ContextCreator.GridPoint target) {
+        if (start == null || target == null) {
+            System.err.println("Error: Start o Target nulo.");
+            return false;
         }
+        if (start.equals(target)) {
+            currentPath.add(start);
+            return false;
+        }
+        return true;
+    }
+    
+    /********** Calcula a distancia euclidiana entre dos puntos (heurística de A*) ***********/
+    private double calculateHeuristic(ContextCreator.GridPoint p1, ContextCreator.GridPoint p2) {
+        return Math.sqrt(Math.pow(p1.getX() - p2.getX(), 2) + Math.pow(p1.getY() - p2.getY(), 2));
     }
 
-    // Calcula la distancia euclidiana entre dos puntos
-    private double calculateHeuristic(GridPoint p1, GridPoint p2) {
-        return Math.sqrt(
-            Math.pow(p1.getX() - p2.getX(), 2) +
-            Math.pow(p1.getY() - p2.getY(), 2)
-        );
-    }
-
-    private List<GridPoint> reconstructPath(Map<GridPoint, GridPoint> cameFrom, GridPoint current) {
-        List<GridPoint> totalPath = new ArrayList<>();
+    /*********** Reconstruye el camino (desde el final hasta el origen) ***********/
+    private List<ContextCreator.GridPoint> reconstructPath(
+            Map<ContextCreator.GridPoint, ContextCreator.GridPoint> cameFrom, ContextCreator.GridPoint current) {
+        List<ContextCreator.GridPoint> totalPath = new ArrayList<>();
         totalPath.add(current);
         while (cameFrom.containsKey(current)) {
             current = cameFrom.get(current);
@@ -379,9 +494,61 @@ public class GisAgent {
         return totalPath;
     }
 
-    // Obtiene los 8 vecinos
-    private List<GridPoint> getNeighbors(GridPoint p) {
-        List<GridPoint> neighbors = new ArrayList<>();
+    /*************** Explora los vecinos del agente ***************/
+    private void exploreNeighbors(
+            ContextCreator.GridPoint current,
+            ContextCreator.GridPoint target,
+            Map<ContextCreator.GridPoint, ContextCreator.GridPoint> cameFrom,
+            Map<ContextCreator.GridPoint, Double> gScore,
+            Map<ContextCreator.GridPoint, Double> fScore,
+            List<ContextCreator.GridPoint> openList) {
+        
+        for (ContextCreator.GridPoint neighbor : getNeighbors(current)) {
+            // Validar límites del grid
+            if (!isWithinBounds(neighbor)) {
+                continue;
+            }
+
+            // Verificar si es transitable y no está congestionado
+            if (isTraversable(neighbor.getX(), neighbor.getY()) && countAgentsAt(neighbor) < 1) {
+                // Calcular nuevo costo para llegar a este vecino
+                double tentativeGScore = gScore.getOrDefault(current, Double.POSITIVE_INFINITY) + 1;
+                
+                // Si este es un mejor camino, actualizarlo
+                if (tentativeGScore < gScore.getOrDefault(neighbor, Double.POSITIVE_INFINITY)) {
+                    cameFrom.put(neighbor, current);
+                    gScore.put(neighbor, tentativeGScore);
+                    fScore.put(neighbor, tentativeGScore + calculateHeuristic(neighbor, target));
+                    
+                    if (!openList.contains(neighbor)) {
+                        openList.add(neighbor);
+                    }
+                }
+            }
+        }
+    }
+    
+    // ========================================
+ 	// |         Métodos del agente           |
+ 	// ========================================
+    /*************** Mover el agente ***************/
+    private void moveAgent(ContextCreator.GridPoint nextPoint) {
+    	if (!isValidStep(nextPoint)) {
+            System.err.println("ERROR (GisAgent " + name + "): Intento de mover a celda inválida!");
+            return;
+        }
+    	
+        agentGrid.moveTo(this, nextPoint.getX(), nextPoint.getY());
+        Coordinate newGeoCoord = ContextCreator.mapGridToGeo(nextPoint.getX(), nextPoint.getY());
+        geography.move(this, geometryFactory.createPoint(newGeoCoord));
+        distanceAccumulated -= ContextCreator.CELL_SIZE_METERS;
+        cellsMoved++;
+        recalculationCount = 0;
+    }
+    
+    /*************** Obtener vecinos del agente ***************/
+    private List<ContextCreator.GridPoint> getNeighbors(ContextCreator.GridPoint p) {
+        List<ContextCreator.GridPoint> neighbors = new ArrayList<>();
         for (int dx = -1; dx <= 1; dx++) {
             for (int dy = -1; dy <= 1; dy++) {
                 if (dx == 0 && dy == 0) {
@@ -389,101 +556,20 @@ public class GisAgent {
                 }
                 int nx = p.getX() + dx;
                 int ny = p.getY() + dy;
-
-                neighbors.add(new GridPoint(nx, ny));
+                neighbors.add(new ContextCreator.GridPoint(nx, ny));
             }
         }
         return neighbors;
     }
 
-    // encontrar puntos de zona segura
-    private void findSafeZonePoints() {
-        Geometry safeZoneGeom = geography.getGeometry(targetSafeZone);
-        if (safeZoneGeom == null) {
-			return;
-		}
-
-        int width = mapCellGrid.getDimensions().getWidth();
-        int height = mapCellGrid.getDimensions().getHeight();
-        GeometryFactory factory = new GeometryFactory();
-
-        for (int x = 0; x < width; x++) {
-            for (int y = 0; y < height; y++) {
-                MapCell cell = mapCellGrid.getObjectAt(x, y);
-                if (cell != null && cell.isTraversable()) {
-                    Coordinate coord = ContextCreator.mapGridToGeo(x, y);
-                    Point point = factory.createPoint(coord);
-
-                    if (safeZoneGeom.contains(point)) {
-                        safeZonePoints.add(new GridPoint(x, y));
-                    }
-                }
-            }
-        }
-    }
-    private GridPoint findClosestSafePoint(GridPoint from) {
-        return safeZonePoints.stream()
-            .min(Comparator.comparingDouble(p -> calculateHeuristic(from, p)))
-            .orElse(null);
-    }
-
-    // Punto de dispersion //ver
-    private GridPoint selectDispersionPoint() {
-        GridPoint currentPos = agentGrid.getLocation(this);
-        GridPoint centroid = calculateCentroid();
-
-        // Calcular distancia al centroide
-        double distanceToCentroid = calculateHeuristic(currentPos, centroid);
-
-        // Solo evacuar inmediatamente si está cerca del centro Y con poca congestión // no se dispersa
-        if (distanceToCentroid < 8 && countAgentsAt(currentPos) <= 1) {
-            return null; // No necesita moverse
-        }
-
-        // Buscar punto disponible cerca del centroide
-        for (int attempts = 0; attempts < 30; attempts++) {
-            int x = centroid.getX() + random.nextInt(15) - 7;
-            int y = centroid.getY() + random.nextInt(15) - 7;
-            GridPoint candidate = new GridPoint(x, y);
-
-            if (isValidPosition(candidate) && !candidate.equals(currentPos)) {
-                return candidate;
-            }
-        }
-
-        // Fallback: cualquier punto disponible que no sea su posición actual
-        GridPoint fallback = safeZonePoints.stream()
-            .filter(this::isValidPosition)
-            .filter(p -> !p.equals(currentPos))
-            .findFirst()
-            .orElse(null);
-
-        return fallback;
-    }
-
-    
-    private GridPoint calculateCentroid() {
-        if (safeZonePoints.isEmpty()) {
-			return new GridPoint(0, 0);
-		}
-        int sumX = safeZonePoints.stream().mapToInt(GridPoint::getX).sum();
-        int sumY = safeZonePoints.stream().mapToInt(GridPoint::getY).sum();
-        return new GridPoint(sumX / safeZonePoints.size(), sumY / safeZonePoints.size());
-    }
-
-    
-    private boolean isInSafeZone(GridPoint point) {
-        MapCell cell = mapCellGrid.getObjectAt(point.getX(), point.getY());
-        if (cell == null) {
-			return false;
-		}
-
-        // Verificar por tipo de celda
-        if (cell.getType() == MapCell.TYPE_SAFE_ZONE) {
+    /*************** Verificar si el agente está en la zona segura ***************/
+    private boolean isInSafeZone(ContextCreator.GridPoint point) {
+        Integer cellType = mapCellGrid.getOrDefault(point, 0);
+        
+        if (MapCell.isSafeZone(cellType)) {
             return true;
         }
 
-        // Verificar por geometría si es necesario
         try {
             Geometry safeZoneGeom = geography.getGeometry(targetSafeZone);
             if (safeZoneGeom != null) {
@@ -492,40 +578,61 @@ public class GisAgent {
                 return safeZoneGeom.contains(geoPoint);
             }
         } catch (Exception e) {
-            // Ignore
+            // Ignorar
         }
-
         return false;
     }
-
-    private boolean isValidPosition(GridPoint point) {
-        return isWithinBounds(point) &&
-               isTraversable(point.getX(), point.getY()) &&
-               countAgentsAt(point) <= 1;
+    
+    /*************** Obtener posición del agente ***************/
+    private ContextCreator.GridPoint getCurrentGridPoint() {
+        GridPoint repastGridPoint = agentGrid.getLocation(this);
+        if (repastGridPoint == null) {
+            return null;
+        }
+        return new ContextCreator.GridPoint(repastGridPoint.getX(), repastGridPoint.getY());
     }
-
-    public boolean isValidStep(GridPoint point) {
+    
+    /*************** Eliminar agente ***************
+    private void removeAgent() {
+        System.out.println("DEBUG (GisAgent " + name + "): Llegó al centroide, removiendo...");
+        Context context = ContextUtils.getContext(this);
+        if (context != null) {
+            context.remove(this);
+        }
+    }*/
+    
+    
+    // ========================================
+ 	// |             Verificar                |
+ 	// ========================================
+    /********* Verificar si paso es válido (la celda está vacia y es transitable) *********/
+    public boolean isValidStep(ContextCreator.GridPoint point) {
         if (!isWithinBounds(point) || !isTraversable(point.getX(), point.getY())) {
             return false;
         }
-
-        // Permitir hasta 2 agentes por celda para evitar bloqueos
-        return countAgentsAt(point) < 2;
+        return countAgentsAt(point) < 1;
     }
 
-    private boolean isWithinBounds(GridPoint point) {
-        int width = mapCellGrid.getDimensions().getWidth();
-        int height = mapCellGrid.getDimensions().getHeight();
-        return point.getX() >= 0 && point.getX() < width &&
-               point.getY() >= 0 && point.getY() < height;
+    /*************** Verificar si el punto está dentro de los limites ***************/
+    private boolean isWithinBounds(ContextCreator.GridPoint point) {
+        return point.getX() >= 0 && point.getX() < ContextCreator.GRID_WIDTH && 
+        	   point.getY() >= 0 && point.getY() < ContextCreator.GRID_HEIGHT;
     }
 
+    /************* Verificar si la celda es transitable (ROAD o SAFE) ***************/
+    /*
     private boolean isTraversable(int x, int y) {
-        MapCell cell = mapCellGrid.getObjectAt(x, y);
-        return cell != null && cell.isTraversable();
+        Integer cellType = mapCellGrid.getOrDefault(new ContextCreator.GridPoint(x, y), 0);
+        return cellType == MapCell.TYPE_ROAD || cellType == MapCell.TYPE_SAFE_ZONE;
+    }
+    */
+    private boolean isTraversable(int x, int y) {
+        Integer cellType = mapCellGrid.getOrDefault(new ContextCreator.GridPoint(x, y), 0);
+        return MapCell.isTraversable(cellType);
     }
 
-    private int countAgentsAt(GridPoint point) {
+    /*************** Contar agentes en la celda (deberia ser 1) ***************/
+    private int countAgentsAt(ContextCreator.GridPoint point) {
         int count = 0;
         for (GisAgent agent : agentGrid.getObjectsAt(point.getX(), point.getY())) {
             count++;
@@ -533,14 +640,8 @@ public class GisAgent {
         return count;
     }
 
-    private GridPoint selectRandomSafePoint() {
-        if (safeZonePoints.isEmpty()) {
-            return null;
-        }
-        return safeZonePoints.get(random.nextInt(safeZonePoints.size()));
-    }
-
-    // Getters
+    
+	/*************** Setters y Getters ***************/
     public String getName() {
         return name;
     }
@@ -549,28 +650,27 @@ public class GisAgent {
         return isEvacuated;
     }
 
-    public boolean hasReachedSafeZone() {
-        return inSafeZone;
-    }
-
     @Override
     public String toString() {
         return name;
     }
 
-	public int getPathIndex() {
-		return pathIndex;
-	}
+    public int getPathIndex() {
+        return pathIndex;
+    }
 
-	public void setPathIndex(int pathIndex) {
-		this.pathIndex = pathIndex;
-	}
+    public void setPathIndex(int pathIndex) {
+        this.pathIndex = pathIndex;
+    }
 
-	List<GridPoint> getCurrentPath() {
-		return currentPath;
-	}
+    public List<ContextCreator.GridPoint> getCurrentPath() {
+        return currentPath;
+    }
 
-	public void setCurrentPath(List<GridPoint> currentPath) {
-		this.currentPath = currentPath;
-	}
+    public void setCurrentPath(List<ContextCreator.GridPoint> currentPath) {
+        this.currentPath = currentPath;
+    }
+    public double getSpeed() {
+        return speed;
+    }
 }

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<repast.simphony.data2.engine.DataSetDescriptor>
+  <name>TotalEvacTimes</name>
+  <type>NON_AGGREGATE</type>
+  <sourceTypes>
+    <entry>
+      <string>EvacuationData</string>
+      <list>
+        <repast.simphony.data2.MethodDataSource>
+          <id>getTotalTimes</id>
+          <dataType>java.lang.Double</dataType>
+        </repast.simphony.data2.MethodDataSource>
+      </list>
+    </entry>
+  </sourceTypes>
+  <schedule>
+    <start>1.0</start>
+    <interval>1.0</interval>
+    <priority>-Infinity</priority>
+    <pType>LAST</pType>
+    <duration>-1.0</duration>
+    <frequency>REPEAT</frequency>
+    <hashCode>0</hashCode>
+  </schedule>
+</repast.simphony.data2.engine.DataSetDescriptor>

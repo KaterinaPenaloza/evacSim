@@ -1,18 +1,37 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <parameters>
-	<parameter name="numAgents" displayName="Number of Agents" type="int" 
-				defaultValue="100" 
-				isReadOnly="false" 
-				converter="repast.simphony.parameter.StringConverterFactory$IntConverter"
-	/>
-	<parameter name="randomSeed" displayName="Default Random Seed" type="int" 
-				defaultValue="__NULL__"
-				isReadOnly="false" 
-				converter="repast.simphony.parameter.StringConverterFactory$IntConverter"			
-	/>
-	<parameter name="secondsPerTick" displayName="Seconds per Tick" type="double"
-				defaultValue="1.0"
-				isReadOnly="false"
-				converter="repast.simphony.parameter.StringConverterFactory$DoubleConverter"
-	/>
+	<parameter name="randomSeed"
+		displayName="1) Default Random Seed" type="int"
+		defaultValue="__NULL__" isReadOnly="false"
+		converter="repast.simphony.parameter.StringConverterFactory$IntConverter" />
+
+	<parameter name="param_01_numAgentsPreset"
+		displayName="2) Number of Agents" type="int"
+		defaultValue="100" isReadOnly="false"
+		converter="repast.simphony.parameter.StringConverterFactory$IntConverter"
+		values="10 50 100 150 500 1000 " />
+	<parameter name="param_02_numAgentsCustom"
+		displayName="3) Custom Number of Agents (0 = use preset)" type="int"
+		defaultValue="0" isReadOnly="false"
+		converter="repast.simphony.parameter.StringConverterFactory$IntConverter" />
+		
+	<parameter name="param_preEvacuationTime" 
+        displayName="4) Tiempo preevacuación min,max (s)" 
+        type="string" 
+        defaultValue="30,60" 
+        isReadOnly="false"/>
+
+	<parameter name="param_04_percentSpeed_0_5"
+		displayName="5) % Agents at 0.5 m/s" type="double"
+		defaultValue="33.33" isReadOnly="false"
+		converter="repast.simphony.parameter.StringConverterFactory$DoubleConverter" />
+	<parameter name="param_05_percentSpeed_1_0"
+		displayName="6) % Agents at 1.0 m/s" type="double"
+		defaultValue="33.33" isReadOnly="false"
+		converter="repast.simphony.parameter.StringConverterFactory$DoubleConverter" />
+	<parameter name="param_06_percentSpeed_1_5"
+		displayName="7) % Agents at 1.5 m/s" type="string"
+		defaultValue="(auto)" isReadOnly="true"
+		 />
+		
 </parameters>

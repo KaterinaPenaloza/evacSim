@@ -4,7 +4,7 @@
   <styles>
     <entry>
       <string>evacSim.agents.GisAgent</string>
-      <string>repast.simphony.visualization.gis3D.style.EditedMarkStyle</string>
+      <string>evacSim.styles.GisAgentStyle</string>
     </entry>
     <entry>
       <string>evacSim.agents.ZoneAgent</string>
@@ -14,7 +14,7 @@
   <editedStyles>
     <entry>
       <string>evacSim.agents.GisAgent</string>
-      <string>evacSim.agents.GisAgent.style_0.xml</string>
+      <null/>
     </entry>
     <entry>
       <string>evacSim.agents.ZoneAgent</string>

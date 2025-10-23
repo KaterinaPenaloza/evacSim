@@ -1,7 +1,6 @@
 package evacSim.styles;
 
 import java.awt.Color;
-import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.image.BufferedImage;
 import java.util.HashMap;
@@ -13,119 +12,137 @@ import gov.nasa.worldwind.avlist.AVKey;
 import gov.nasa.worldwind.render.BasicWWTexture;
 import gov.nasa.worldwind.render.Material;
 import gov.nasa.worldwind.render.Offset;
-import gov.nasa.worldwind.render.PatternFactory;
 import gov.nasa.worldwind.render.WWTexture;
 import repast.simphony.visualization.gis3D.PlaceMark;
 import repast.simphony.visualization.gis3D.style.MarkStyle;
 
 /**
- *
- * Style for GisAgents.  This demo style changes the appearance of the GisAgents
- * based on their water value.
+ * Style for GisAgents. This style changes the appearance of the GisAgents
+ * based on their speed value.
+ * 
+ * Speed colors:
+ * - 0.5 m/s -> BROWN-ORANGE (naranjo oscuro casi café)
+ * - 1.0 m/s -> YELLOW (amarillo)
+ * - 1.5 m/s -> DARK BLUE (azul oscuro)
+ * 
  * @author Eric Tatara
- *
  */
-
-public class GisAgentStyle implements MarkStyle<GisAgent>{
+public class GisAgentStyle implements MarkStyle<GisAgent> {
 
 	private Offset labelOffset;
-
 	private Map<String, WWTexture> textureMap;
 
-	public GisAgentStyle(){
+	// Constantes de velocidad
+	private static final double SPEED_SLOW = 0.5;
+	private static final double SPEED_MEDIUM = 1.0;
+	private static final double SPEED_FAST = 1.5;
+	
+	// Colores por velocidad
+	private static final Color COLOR_SLOW = new Color(189, 94, 0); // naranjo oscuro casi café
+	private static final Color COLOR_MEDIUM = new Color(244, 235, 113); // amarillo
+	private static final Color COLOR_FAST = new Color(48, 0, 138); // azul oscuro
 
-		/**
-		 * The gov.nasa.worldwind.render.Offset is used to position the label from
-		 *   the mark point location.  The first two arguments in the Offset
-		 *   constructor are the x and y offset values.  The third and fourth
-		 *   arguments are the x and y units for the offset. AVKey.FRACTION
-		 *   represents units of the image texture size, with 1.0 being one image
-		 *   width/height.  AVKey.PIXELS can be used to specify the offset in pixels.
-		 */
+	// Color del borde (negro)
+	private static final Color BORDER_COLOR = Color.BLACK;
+	private static final float BORDER_WIDTH = 4.0f; // Borde más grueso
+	
+	public GisAgentStyle() {
 		labelOffset = new Offset(1.2d, 0.6d, AVKey.FRACTION, AVKey.FRACTION);
-
-		/**
-		 * Use of a map to store textures significantly reduces CPU and memory use
-		 * since the same texture can be reused.  Textures can be created for different
-		 * agent states and re-used when needed.
-		 */
 		textureMap = new HashMap<>();
 
-		BufferedImage image = PatternFactory.createPattern(PatternFactory.PATTERN_CIRCLE,
-				new Dimension(50, 50), 0.7f,  Color.BLUE);
-
-		textureMap.put("blue circle", new BasicWWTexture(image));
-
-		image = PatternFactory.createPattern(PatternFactory.PATTERN_CIRCLE,
-				new Dimension(50, 50), 0.7f,  Color.YELLOW);
-
-		textureMap.put("yellow circle", new BasicWWTexture(image));
+		// Crear texturas para cada velocidad con bordes gruesos
+		createTextures();
 	}
 
 	/**
-	 * The PlaceMark is a WWJ PointPlacemark implementation with a different
-	 *   texture handling mechanism.  All other standard WWJ PointPlacemark
-	 *   attributes can be changed here.  PointPlacemark label attributes could be
-	 *   set here, but are also available through the MarkStyle interface.
-	 *
-	 *   @see gov.nasa.worldwind.render.PointPlacemark for more info.
+	 * Crea las texturas para cada velocidad con bordes gruesos y negros
 	 */
+	private void createTextures() {
+		// Textura naranjo oscuro para velocidad 0.5 m/s (lenta)
+		BufferedImage imageSlow = createCircle(COLOR_SLOW);
+		textureMap.put("speed_0.5", new BasicWWTexture(imageSlow));
+
+		// Textura amarilla para velocidad 1.0 m/s (media)
+		BufferedImage imageMedium = createCircle(COLOR_MEDIUM);
+		textureMap.put("speed_1.0", new BasicWWTexture(imageMedium));
+
+		// Textura azul oscuro para velocidad 1.5 m/s (rápida)
+		BufferedImage imageFast = createCircle(COLOR_FAST);
+		textureMap.put("speed_1.5", new BasicWWTexture(imageFast));
+	}
+
+	/**
+	 * Crea un círculo con borde negro grueso
+	 */
+	private BufferedImage createCircle(Color fillColor) {
+		int size = 60; // Tamaño aumentado para mejor visibilidad
+		BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		java.awt.Graphics2D g2d = image.createGraphics();
+		
+		// Activar antialiasing para bordes suaves
+		g2d.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, 
+		                     java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+		
+		int center = size / 2;
+		int radius = (int)(size * 0.4); // Radio del círculo
+		
+		// Dibujar el círculo de relleno
+		g2d.setColor(fillColor);
+		g2d.fillOval(center - radius, center - radius, radius * 2, radius * 2);
+		
+		// Dibujar el borde negro grueso
+		g2d.setColor(BORDER_COLOR);
+		g2d.setStroke(new java.awt.BasicStroke(BORDER_WIDTH));
+		g2d.drawOval(center - radius, center - radius, radius * 2, radius * 2);
+		
+		g2d.dispose();
+		return image;
+	}
+
+	/**
+	 * Obtiene la clave de textura según la velocidad del agente
+	 */
+	private String getTextureKey(double speed) {
+		if (Math.abs(speed - SPEED_SLOW) < 0.01) {
+			return "speed_0.5";
+		} else if (Math.abs(speed - SPEED_MEDIUM) < 0.01) {
+			return "speed_1.0";
+		} else if (Math.abs(speed - SPEED_FAST) < 0.01) {
+			return "speed_1.5";
+		}
+		// Por defecto, usar velocidad media
+		return "speed_1.0";
+	}
+
 	@Override
 	public PlaceMark getPlaceMark(GisAgent agent, PlaceMark mark) {
-
-		// PlaceMark is null on first call.
 		if (mark == null) {
 			mark = new PlaceMark();
 		}
 
-		/**
-		 * The Altitude mode determines how the mark appears using the elevation.
-		 *   WorldWind.ABSOLUTE places the mark at elevation relative to sea level
-		 *   WorldWind.RELATIVE_TO_GROUND places the mark at elevation relative to ground elevation
-		 *   WorldWind.CLAMP_TO_GROUND places the mark at ground elevation
-		 */
 		mark.setAltitudeMode(WorldWind.RELATIVE_TO_GROUND);
 		mark.setLineEnabled(false);
 
 		return mark;
 	}
 
-	/**
-	 * Get the mark elevation in meters.  The elevation is used to visually offset
-	 *   the mark from the surface and is not an inherent property of the agent's
-	 *   location in the geography.
-	 */
 	@Override
 	public double getElevation(GisAgent agent) {
-
-			return 0;
-
+		return 0;
 	}
 
 	/**
-	 * Here we set the appearance of the GisAgent.  In this style implementation,
-	 *   the style class creates a new BufferedImage each time getTexture is
-	 *   called.  If the texture never changes, the texture argument can just be
-	 *   checked for null value, created once, and then just returned every time
-	 *   thereafter.  If there is a small set of possible values for the texture,
-	 *   eg. blue circle, and yellow circle, those BufferedImages could
-	 *   be stored here and re-used by returning the appropriate image based on
-	 *   the agent properties.
+	 * Retorna la textura según la velocidad del agente
 	 */
 	@Override
 	public WWTexture getTexture(GisAgent agent, WWTexture texture) {
-
-		// WWTexture is null on first call.
-			return textureMap.get("yellow circle");
-
+		String textureKey = getTextureKey(agent.getSpeed());
+		return textureMap.get(textureKey);
 	}
 
-	/**
-	 * Scale factor for the mark size.
-	 */
 	@Override
 	public double getScale(GisAgent agent) {
-		return 0.2;
+		return 0.25; // Ligeramente más grande para mejor visibilidad
 	}
 
 	@Override
@@ -133,28 +150,18 @@ public class GisAgentStyle implements MarkStyle<GisAgent>{
 		return 0;
 	}
 
-	/**
-	 * The agent on-screen label.  Return null instead of empty string "" for better
-	 *   performance.
-	 */
 	@Override
 	public String getLabel(GisAgent agent) {
-//		return "" + agent.getWaterRate();
+		// Opcional: mostrar la velocidad como etiqueta
+		// return String.format("%.1f m/s", agent.getSpeed());
 		return null;
 	}
 
 	@Override
 	public Color getLabelColor(GisAgent agent) {
-
-			return Color.YELLOW;
-
+		return Color.YELLOW;
 	}
 
-	/**
-	 * Return an Offset that determines the label position relative to the mark
-	 * position.  @see gov.nasa.worldwind.render.Offset
-	 *
-	 */
 	@Override
 	public Offset getLabelOffset(GisAgent agent) {
 		return labelOffset;
@@ -165,23 +172,16 @@ public class GisAgentStyle implements MarkStyle<GisAgent>{
 		return null;
 	}
 
-	/** Width of the line that connects an elevated mark with the surface.  Use
-	 *    a value of 0 to disable line drawing.
-	 *
-	 */
 	@Override
 	public double getLineWidth(GisAgent agent) {
-
-			return 0;
-
+		return 0;
 	}
 
 	@Override
 	public Material getLineMaterial(GisAgent obj, Material lineMaterial) {
-		if (lineMaterial == null){
+		if (lineMaterial == null) {
 			lineMaterial = new Material(Color.RED);
 		}
-
 		return lineMaterial;
 	}
 
