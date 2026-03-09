@@ -413,7 +413,7 @@ public class GisAgent {
         fScore.put(start, calculateHeuristic(start, target));
         openList.add(start);
 
-        // Encontrar un camino parcial si no se puede llegar la destino //***Revisar esto***
+        // Encontrar un camino parcial si no se puede llegar la destino
         ContextCreator.GridPoint closestToTargetSoFar = start;
         double minDistanceFromTarget = calculateHeuristic(start, target);
 
@@ -620,12 +620,6 @@ public class GisAgent {
     }
 
     /************* Verificar si la celda es transitable (ROAD o SAFE) ***************/
-    /*
-    private boolean isTraversable(int x, int y) {
-        Integer cellType = mapCellGrid.getOrDefault(new ContextCreator.GridPoint(x, y), 0);
-        return cellType == MapCell.TYPE_ROAD || cellType == MapCell.TYPE_SAFE_ZONE;
-    }
-    */
     private boolean isTraversable(int x, int y) {
         Integer cellType = mapCellGrid.getOrDefault(new ContextCreator.GridPoint(x, y), 0);
         return MapCell.isTraversable(cellType);

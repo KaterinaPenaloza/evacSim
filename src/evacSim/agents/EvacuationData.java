@@ -33,12 +33,7 @@ import repast.simphony.engine.schedule.ScheduleParameters;
 import repast.simphony.engine.environment.RunEnvironment;
 import repast.simphony.parameter.Parameters;
 
-/**
- * Recolecta:
- * - Evacuados vs tiempo (CSV consolidado con múltiples experimentos)
- * - Boxplot del tiempo total de evacuación
- * - CSV de detalle y acumulado
- */
+
 public class EvacuationData {
 
     private static final double SECONDS_PER_TICK = 0.5;
@@ -55,10 +50,10 @@ public class EvacuationData {
     private static final List<AgentTimes> AGENT_TIMES = new ArrayList<>();
     private static final List<Double> TOTAL_TIMES = new ArrayList<>();
 
-    // recoger tiempos de cada agente
+    // Guardar tiempos de cada agente
     public static synchronized void recordAgentTimes(String agentName, double preMovementSec, double movementSec, double totalSec) {
         AGENT_TIMES.add(new AgentTimes(agentName, preMovementSec, movementSec, totalSec));
-        TOTAL_TIMES.add(totalSec); // Agregar al listado
+        TOTAL_TIMES.add(totalSec);
     }
 
     public static synchronized void resetAgentTimes() {
@@ -72,7 +67,7 @@ public class EvacuationData {
         }
     }
 
-    // Configuracion
+    // Configuración
     private final int totalAgents;
     private final String csvDetailsPath;
     private final String csvEvacuatedData;
@@ -83,7 +78,7 @@ public class EvacuationData {
     private final List<DataPoint> dataPoints = new ArrayList<>();
     private int lastEvacuated = 0;
 
-    // Número de experimento actual (se obtiene automáticamente)
+    // Número de experimento actual
     private int experimentNumber = -1;
     private String scenarioCode = null;
 
@@ -107,10 +102,7 @@ public class EvacuationData {
         readScenarioFromParameters();
     }
 
-    /**
-     * Lee los parámetros de velocidad y número de experimento desde RunEnvironment
-     * Detecta automáticamente el siguiente experimento disponible leyendo el CSV
-     */
+    //Lee los parámetros de velocidad y número de experimento desde RunEnvironment
     private void readScenarioFromParameters() {
         try {
             Parameters params = RunEnvironment.getInstance().getParameters();
@@ -120,31 +112,21 @@ public class EvacuationData {
             double pct_1_0 = ((Number) params.getValue("param_05_percentSpeed_1_0")).doubleValue();
             double pct_1_5 = 100.0 - pct_0_5 - pct_1_0;
             
-            // Crear código del escenario (formato: XXX,YYY,ZZZ sin comas)
+            // id del escenario (formato: XXX,YYY,ZZZ)
             int p1 = (int) Math.round(pct_0_5);
             int p2 = (int) Math.round(pct_1_0);
             int p3 = (int) Math.round(pct_1_5);
             this.scenarioCode = String.format("%03d%03d%03d", p1, p2, p3);
             
-            // Detectar automáticamente el siguiente experimento disponible
-            this.experimentNumber = detectNextExperiment();
-            
-            System.out.println("DEBUG: Escenario detectado: " + scenarioCode + 
-                             " (velocidades: " + p1 + "%, " + p2 + "%, " + p3 + "%)");
-            System.out.println("DEBUG: Número de experimento auto-detectado: " + experimentNumber);
-            
+            this.experimentNumber = detectNextExperiment();            
         } catch (Exception e) {
             System.err.println("ERROR leyendo parámetros del escenario: " + e.getMessage());
-            this.scenarioCode = "000000100"; // Default
+            this.scenarioCode = "000000000"; // Default
             this.experimentNumber = 0;
         }
     }
 
-    /**
-     * Detecta automáticamente el siguiente experimento disponible
-     * leyendo el CSV consolidado y viendo qué columnas ya tienen datos
-     * @return número del siguiente experimento disponible (0-9)
-     */
+    // Detecta el siguiente número de experimento
     private int detectNextExperiment() {
         String consolidatedPath = csvEvacuatedData.replace(".csv", 
             "_escenario" + scenarioCode + ".csv");
@@ -156,46 +138,31 @@ public class EvacuationData {
         }
         
         try (BufferedReader r = new BufferedReader(new FileReader(f))) {
-            // Leer header
             String headerLine = r.readLine();
             if (headerLine == null) {
                 return 0;
             }
             
-            // Leer primera línea de datos
+            String[] headerParts = headerLine.split(";");
+            int totalExperimentColumns = headerParts.length - 2;
             String firstDataLine = r.readLine();
             if (firstDataLine == null) {
                 return 0;
             }
+            String[] parts = firstDataLine.split(";", -1);
             
-            String[] parts = firstDataLine.split(";");
-            
-            // Contar cuántas columnas de datos tienen información
-            // Formato: tick;time_seconds;evacuated_count0;evacuated_count1;...
-            // Entonces parts[2] es evacuated_count0, parts[3] es evacuated_count1, etc.
+            // Experimentos completados
             int filledExperiments = 0;
-            for (int i = 2; i < parts.length && i < 12; i++) { // 12 = 2 + 10 experimentos
+            for (int i = 2; i < parts.length; i++) {
                 String value = parts[i].trim();
                 if (!value.isEmpty()) {
                     filledExperiments++;
                 } else {
-                    // Encontramos la primera columna vacía
+                    // se encuentra la primera columna vacía
                     break;
                 }
             }
-            
-            // El siguiente experimento es el número de experimentos ya completados
-            int nextExp = filledExperiments;
-            
-            // Validar que esté en rango
-            if (nextExp < 0) nextExp = 0;
-            if (nextExp > 9) {
-                System.out.println("ADVERTENCIA: Ya se completaron los 10 experimentos para el escenario " + scenarioCode);
-                System.out.println("Se sobrescribirá el experimento 9.");
-                nextExp = 9;
-            }
-            
-            return nextExp;
+            return filledExperiments;
             
         } catch (IOException e) {
             System.err.println("ERROR detectando siguiente experimento: " + e.getMessage());
@@ -203,17 +170,14 @@ public class EvacuationData {
         }
     }
 
-    /**
-     * Permite establecer manualmente el número de experimento
-     * (útil si se ejecuta desde código externo)
-     */
     public void setExperimentNumber(int expNum) {
-        if (expNum >= 0 && expNum <= 9) {
+        if (expNum >= 0) {
             this.experimentNumber = expNum;
-            System.out.println("DEBUG: Número de experimento establecido manualmente: " + expNum);
         }
     }
 
+    
+    
     @ScheduledMethod(start = 1, interval = 1, priority = ScheduleParameters.LAST_PRIORITY)
     public void collectData() {
         int tick = (int) RunEnvironment.getInstance().getCurrentSchedule().getTickCount();
@@ -227,155 +191,173 @@ public class EvacuationData {
         series.add(timeSec, evacuated);
         
         int reachedTarget = ContextCreator.REACHED_TARGET_TOTAL;
+        // Mostar graficos al terminar el experimento automaticamente y generar csv
         if (reachedTarget >= totalAgents) {
             saveCsvDetails();
-            appendToConsolidatedCsv(); // NUEVO: CSV consolidado
-            generateEvacuatedChart();
-            generateBoxPlot();
+            appendToConsolidatedCsv();
+            //generateEvacuatedChart();
+            //generateBoxPlot();
             
             // Pausar la simulación
             RunEnvironment.getInstance().pauseRun();
         }
     }
 
-    /**
-     * NUEVO: Agrega los datos de este experimento al CSV consolidado del escenario
-     * Formato: tick;time_seconds;evacuated_count0;evacuated_count1;...;evacuated_count9
-     */
+    // Agrega datos al CSV consolidado.
     private void appendToConsolidatedCsv() {
         try {
-            String consolidatedPath = csvEvacuatedData.replace(".csv", 
-                "_escenario" + scenarioCode + ".csv");
+            String consolidatedPath = csvEvacuatedData.replace(".csv", "_escenario" + scenarioCode + ".csv");
             File f = new File(consolidatedPath);
             
             boolean fileExists = f.exists();
             
             if (f.getParentFile() != null) f.getParentFile().mkdirs();
             
-            // Si es el primer experimento (0) o el archivo no existe, crear archivo con headers
-            if ((experimentNumber == 0 || !fileExists)) {
+            // Si el archivo no existe, crearlo
+            if (!fileExists) {
                 try (BufferedWriter w = new BufferedWriter(new FileWriter(f))) {
-                    // Escribir header
-                    w.write("tick;time_seconds");
-                    for (int i = 0; i < 10; i++) {
-                        w.write(";evacuated_count" + i);
-                    }
-                    w.write("\n");
+                    // Header con la primera columna de experimento
+                    w.write("tick;time_seconds;evacuated_count" + experimentNumber + "\n");
                     
-                    // Escribir datos del primer experimento
+                    // Escribir datos
                     for (DataPoint dp : dataPoints) {
-                        w.write(dp.tick + ";" + String.format(java.util.Locale.US, "%.2f", dp.timeSeconds));
-                        // Escribir datos en la columna correspondiente
-                        for (int i = 0; i < 10; i++) {
-                            if (i == experimentNumber) {
-                                w.write(";" + dp.evacuatedCount);
-                            } else {
-                                w.write(";");
+                        w.write(dp.tick + ";" + 
+                               String.format(java.util.Locale.US, "%.2f", dp.timeSeconds) + ";" +
+                               dp.evacuatedCount + "\n");
+                    }
+                }
+                System.out.println("CSV consolidado creado: " + f.getPath() + " (exp " + experimentNumber + ")");
+                return;
+            }
+            
+            // Leer archivo existente
+            List<String> lines = new ArrayList<>();
+            try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    lines.add(line);
+                }
+            }
+            
+            if (lines.isEmpty()) {
+                System.err.println("ERROR: Archivo CSV vacío");
+                return;
+            }
+            
+            // Determinar cuántos experimentos ya existen
+            String headerLine = lines.get(0);
+            String[] headerParts = headerLine.split(";");
+            int existingExperiments = headerParts.length - 2;
+            
+ 
+            Map<Integer, Integer> tickToEvacuated = new HashMap<>();
+            int maxTickThisExperiment = 0;
+            for (DataPoint dp : dataPoints) {
+                tickToEvacuated.put(dp.tick, dp.evacuatedCount);
+                if (dp.tick > maxTickThisExperiment) {
+                    maxTickThisExperiment = dp.tick;
+                }
+            }
+            
+            // Determinar el tick máximo en el archivo
+            int maxTickInFile = 0;
+            if (lines.size() > 1) {
+                String lastLine = lines.get(lines.size() - 1);
+                String[] parts = lastLine.split(";");
+                if (parts.length >= 1) {
+                    maxTickInFile = Integer.parseInt(parts[0].trim());
+                }
+            }
+            
+            int maxTickTotal = Math.max(maxTickInFile, maxTickThisExperiment);
+            
+            // Determinar si agregar nueva columna
+            boolean needNewColumn = experimentNumber >= existingExperiments;
+            
+            // Reescribir archivo
+            try (BufferedWriter w = new BufferedWriter(new FileWriter(f))) {
+                // Procesar header
+                if (needNewColumn) {
+                    w.write(headerLine + ";evacuated_count" + experimentNumber + "\n");
+                } else {
+                    // Header sin cambios
+                    w.write(headerLine + "\n");
+                }
+                
+                // Procesar líneas de datos
+                for (int i = 1; i < lines.size(); i++) {
+                    String line = lines.get(i);
+                    String[] parts = line.split(";", -1);
+                    
+                    if (parts.length < 2) {
+                        w.write(line + "\n");
+                        continue;
+                    }
+                    
+                    int tick = Integer.parseInt(parts[0].trim());
+                    
+                    StringBuilder newLine = new StringBuilder();
+                    newLine.append(parts[0]).append(";").append(parts[1]); // tick;time_seconds
+                    
+                    // Agregar columnas de experimentos existentes
+                    for (int col = 0; col < existingExperiments; col++) {
+                        newLine.append(";");
+                        if (col == experimentNumber) {
+                            // Actualizar columna
+                            Integer value = tickToEvacuated.get(tick);
+                            if (value != null) {
+                                newLine.append(value);
+                            }
+                        } else if (parts.length > (2 + col)) {
+                            // Mantener valor existente
+                            newLine.append(parts[2 + col]);
+                        }
+                    }
+                    
+                    if (needNewColumn) {
+                        newLine.append(";");
+                        Integer value = tickToEvacuated.get(tick);
+                        if (value != null) {
+                            newLine.append(value);
+                        }
+                    }
+                    
+                    w.write(newLine.toString() + "\n");
+                }
+               
+                if (maxTickThisExperiment > maxTickInFile) {
+                    for (int tick = maxTickInFile + 1; tick <= maxTickThisExperiment; tick++) {
+                        double timeSec = tick * SECONDS_PER_TICK;
+                        w.write(tick + ";" + String.format(java.util.Locale.US, "%.2f", timeSec));
+                        
+                        // Columnas vacías para experimentos anteriores
+                        for (int col = 0; col < existingExperiments; col++) {
+                            w.write(";");
+                            if (col == experimentNumber) {
+                                Integer value = tickToEvacuated.get(tick);
+                                if (value != null) {
+                                    w.write(String.valueOf(value));
+                                }
                             }
                         }
+                        
+                        if (needNewColumn) {
+                            w.write(";");
+                            Integer value = tickToEvacuated.get(tick);
+                            if (value != null) {
+                                w.write(String.valueOf(value));
+                            }
+                        }
+                        
                         w.write("\n");
                     }
                 }
-                System.out.println("CSV consolidado creado/reiniciado: " + f.getPath() + " (exp " + experimentNumber + ")");
-            } else {
-                // Leer archivo existente
-                List<String> lines = new ArrayList<>();
-                try (BufferedReader r = new BufferedReader(new FileReader(f))) {
-                    String line;
-                    while ((line = r.readLine()) != null) {
-                        lines.add(line);
-                    }
-                }
-                
-                // Crear mapa de tick -> evacuados para este experimento
-                Map<Integer, Integer> tickToEvacuated = new HashMap<>();
-                int maxTickThisExperiment = 0;
-                for (DataPoint dp : dataPoints) {
-                    tickToEvacuated.put(dp.tick, dp.evacuatedCount);
-                    if (dp.tick > maxTickThisExperiment) {
-                        maxTickThisExperiment = dp.tick;
-                    }
-                }
-                
-                // Determinar el tick máximo que existe en el archivo
-                int maxTickInFile = 0;
-                if (lines.size() > 1) {
-                    String lastLine = lines.get(lines.size() - 1);
-                    String[] parts = lastLine.split(";");
-                    if (parts.length >= 1) {
-                        maxTickInFile = Integer.parseInt(parts[0].trim());
-                    }
-                }
-                
-                // El tick máximo total es el mayor entre el archivo y este experimento
-                int maxTickTotal = Math.max(maxTickInFile, maxTickThisExperiment);
-                
-                // Reescribir archivo con nueva columna y filas adicionales si es necesario
-                try (BufferedWriter w = new BufferedWriter(new FileWriter(f))) {
-                    // Procesar líneas existentes
-                    for (int i = 0; i < lines.size(); i++) {
-                        String line = lines.get(i);
-                        
-                        if (i == 0) {
-                            // Header: ya está completo
-                            w.write(line + "\n");
-                        } else {
-                            // Extraer tick de la línea
-                            String[] parts = line.split(";", -1); // -1 para preservar campos vacíos
-                            if (parts.length < 2) {
-                                w.write(line + "\n");
-                                continue;
-                            }
-                            
-                            int tick = Integer.parseInt(parts[0].trim());
-                            
-                            // Reconstruir la línea
-                            StringBuilder newLine = new StringBuilder();
-                            newLine.append(parts[0]).append(";").append(parts[1]); // tick;time_seconds
-                            
-                            // Agregar las 10 columnas de datos
-                            for (int col = 0; col < 10; col++) {
-                                newLine.append(";");
-                                if (col == experimentNumber) {
-                                    // Esta es la columna de este experimento
-                                    Integer value = tickToEvacuated.get(tick);
-                                    if (value != null) {
-                                        newLine.append(value);
-                                    }
-                                } else if (parts.length > (2 + col)) {
-                                    // Mantener valor existente de otro experimento
-                                    newLine.append(parts[2 + col]);
-                                }
-                            }
-                            
-                            w.write(newLine.toString() + "\n");
-                        }
-                    }
-                    
-                    // Si este experimento tiene más ticks que el archivo, agregar filas nuevas
-                    if (maxTickThisExperiment > maxTickInFile) {
-                        for (int tick = maxTickInFile + 1; tick <= maxTickThisExperiment; tick++) {
-                            double timeSec = tick * SECONDS_PER_TICK;
-                            w.write(tick + ";" + String.format(java.util.Locale.US, "%.2f", timeSec));
-                            
-                            // Agregar las 10 columnas
-                            for (int col = 0; col < 10; col++) {
-                                w.write(";");
-                                if (col == experimentNumber) {
-                                    Integer value = tickToEvacuated.get(tick);
-                                    if (value != null) {
-                                        w.write(String.valueOf(value));
-                                    }
-                                }
-                                // Las demás columnas quedan vacías
-                            }
-                            w.write("\n");
-                        }
-                    }
-                }
-                System.out.println("CSV consolidado actualizado (exp " + experimentNumber + ", " + 
-                                 dataPoints.size() + " filas): " + f.getPath());
             }
+            
+            System.out.println("CSV consolidado actualizado: exp " + experimentNumber + 
+                             " (total experimentos: " + (needNewColumn ? existingExperiments + 1 : existingExperiments) + 
+                             ", filas: " + dataPoints.size() + ") - " + f.getPath());
+            
         } catch (IOException e) {
             System.err.println("ERROR guardando CSV consolidado: " + e.getMessage());
             e.printStackTrace();
@@ -385,7 +367,7 @@ public class EvacuationData {
         }
     }
 
-    // csv evacuación por agente (sin cambios)
+    // CSV evacuación por agente
     private void saveCsvDetails() {
         try {
             File f = new File(csvDetailsPath);
@@ -450,7 +432,7 @@ public class EvacuationData {
         }
     }
 
-    // Boxplot (sin cambios)
+    // Boxplot
     private void generateBoxPlot() {
         try {
             DefaultBoxAndWhiskerCategoryDataset ds = new DefaultBoxAndWhiskerCategoryDataset();
@@ -474,8 +456,7 @@ public class EvacuationData {
             double max = TOTAL_TIMES.stream().mapToDouble(Double::doubleValue).max().orElse(0);
 
             // fija el rango del eje para incluir outliers
-            range.setRange(min * 0.98, max * 1.02);   // o setLower/UpperMargin si prefieres
-            // opcional: evita forzar el cero
+            range.setRange(min * 0.98, max * 1.02);
             range.setAutoRangeIncludesZero(false);
             
             plot.setBackgroundPaint(Color.WHITE);
@@ -489,7 +470,6 @@ public class EvacuationData {
             renderer.setWhiskerWidth(0.2);
             renderer.setUseOutlinePaintForWhiskers(true);
 
-            
             // media
             double mean = TOTAL_TIMES.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
             ValueMarker meanMarker = new ValueMarker(mean);

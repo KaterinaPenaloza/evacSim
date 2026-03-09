@@ -5,7 +5,6 @@ import repast.simphony.engine.schedule.ScheduledMethod;
 public class ZoneAgent {
 
 	private String name;
-	// private double waterFlowRate;
 
 	public ZoneAgent(String name) {
 		this.name = name;

@@ -211,7 +211,7 @@ public class ContextCreator implements ContextBuilder {
 	    percentSpeed_1_0 = validatedPercentages[1];
 	    percentSpeed_1_5 = validatedPercentages[2];
 	    
-	 // *** NUEVO: Leer y parsear parámetro de preevacuación ***
+	    	// Leer parámetro de preevacuación
 	    String preEvacTimeStr = (String) params.getValue("param_preEvacuationTime");
 	    parsePreEvacuationTime(preEvacTimeStr);
 	    
@@ -285,8 +285,7 @@ public class ContextCreator implements ContextBuilder {
 		long startTime = System.currentTimeMillis();
 		
 		GeographyParameters geoParams = new GeographyParameters();
-		Geography<Object> geo = GeographyFactoryFinder.createGeographyFactory(null).createGeography("Geography",
-				context, geoParams);
+		Geography<Object> geo = GeographyFactoryFinder.createGeographyFactory(null).createGeography("Geography", context, geoParams);
 		System.out.println("DEBUG: Geography creada.");
 		
 		long endTime = System.currentTimeMillis();
@@ -416,6 +415,7 @@ public class ContextCreator implements ContextBuilder {
 		return zone;
 	}
 	
+	// Marcar objetivo de la zona segura
 	public static GridPoint getSafeZoneTarget() {
 	    if (safeZonePoints == null || safeZonePoints.isEmpty()) {
 	        System.err.println("ERROR: No hay puntos transitables disponibles en la zona segura.");
@@ -426,6 +426,7 @@ public class ContextCreator implements ContextBuilder {
 	    return safeZonePoints.get(randomIndex);
 	}
 	
+	// Marcar celdas de la zona
 	private void markGridCellsForZone(Geometry geometry, int zoneType, int roadInZoneType) {
 	    GeometryFactory fac = new GeometryFactory();
 	    int cellsMarked = 0;
@@ -440,12 +441,12 @@ public class ContextCreator implements ContextBuilder {
 	                GridPoint gp = new GridPoint(x, y);
 	                Integer currentType = mapCellGrid.get(gp);
 	                
-	                // Si ya es carretera, cambiar a carretera-en-zona
+	                // Si ya es carretera, cambiar a carretera dentro de zona (es zona y carretera a la vez)
 	                if (currentType != null && currentType == MapCell.TYPE_ROAD) {
 	                    mapCellGrid.put(gp, roadInZoneType);
 	                    roadsCombined++;
 	                } else if (currentType == null || currentType == MapCell.TYPE_EMPTY) {
-	                    // Solo zona si está vacío
+	                    // Sino dejarlo solo como zona
 	                    mapCellGrid.put(gp, zoneType);
 	                    cellsMarked++;
 	                }
@@ -505,8 +506,7 @@ public class ContextCreator implements ContextBuilder {
 	    long duration = endTime - startTime;
 	    System.out.println("[TIMESTAMP] Recopilación de puntos transitables - Duración: " + duration + "ms");
 	}
-	// 4.4) Carreteras
-
+	
 	// 4.5) Validar zonas
 	private void validateZones() {
 		long startTime = System.currentTimeMillis();
@@ -570,7 +570,6 @@ public class ContextCreator implements ContextBuilder {
 		long endTime = System.currentTimeMillis();
 	    long duration = endTime - startTime;
 	    System.out.println("[TIMESTAMP] findCellsInitialZone - Duración: " + duration + "ms");
-
 		return spawnCells;
 	}
 	
@@ -598,7 +597,7 @@ public class ContextCreator implements ContextBuilder {
 	
 	
 	
-/********** 6) Recolección de datos **********/
+	/********** 6) Recolección de datos **********/
 	private void addDataCollector(Context context) {
 		EvacuationData dataCollector = new EvacuationData(numAgents);
 		context.add(dataCollector);
@@ -608,9 +607,7 @@ public class ContextCreator implements ContextBuilder {
 	// ===============================
 	// |          Geometry           |
 	// ===============================
-	// ====================================================
-	// |     Extraer geometrías de features del shp       |
-	// ====================================================
+	// Extraer geometrías de features del shp
 private Geometry extractGeometryFromFeature(SimpleFeature feature) {
 		Geometry rawGeometry = (Geometry) feature.getDefaultGeometry();
 		Geometry geometryToUse = rawGeometry;
@@ -621,7 +618,6 @@ private Geometry extractGeometryFromFeature(SimpleFeature feature) {
 				geometryToUse = mp.getGeometryN(0);
 			}
 		}
-
 		return geometryToUse;
 	}
 
@@ -656,8 +652,6 @@ private Geometry extractGeometryFromFeature(SimpleFeature feature) {
 	    }
 	}
 	
-	// Marcar las lineas de los caminos
-
 	// Marcar las lineas de las carreteras
 	private void markLineBresenham(int x0, int y0, int x1, int y1, int cellType) {
 	    int dx = Math.abs(x1 - x0);
@@ -822,44 +816,8 @@ private Geometry extractGeometryFromFeature(SimpleFeature feature) {
 
 		return new Coordinate(geo[1], geo[0]);
 	}
-
-/*	public static void testTransformations() {
-		System.out.println("=== PRUEBA DE TRANSFORMACIONES ===");
-		System.out.printf("Área: %.1f x %.1f metros\n", AREA_WIDTH_METERS, AREA_HEIGHT_METERS);
-		System.out.printf("Punto de referencia: %.8f, %.8f\n", REF_LAT, REF_LON);
-
-		Coordinate[] testPoints = { new Coordinate(MIN_LONGITUDE, MIN_LATITUDE),
-				new Coordinate(MAX_LONGITUDE, MIN_LATITUDE), new Coordinate(MAX_LONGITUDE, MAX_LATITUDE),
-				new Coordinate(MIN_LONGITUDE, MAX_LATITUDE), new Coordinate(REF_LON, REF_LAT) };
-
-		String[] names = { "SW", "SE", "NE", "NW", "Centro" };
-
-		for (int i = 0; i < testPoints.length; i++) {
-			Coordinate original = testPoints[i];
-			GridPoint grid = mapGeoToGrid(original);
-			Coordinate reconstructed = mapGridToGeo(grid.getX(), grid.getY());
-
-			double errorMeters = distanceInMeters(original, reconstructed);
-
-			System.out.printf("%s: (%.8f, %.8f) -> (%d, %d) -> (%.8f, %.8f) | Error: %.3f m\n", names[i], original.x,
-					original.y, grid.getX(), grid.getY(), reconstructed.x, reconstructed.y, errorMeters);
-		}
-	}
-*/
-
-/*    private static double distanceInMeters(Coordinate c1, Coordinate c2) {
-		double[] ecef1 = geoToECEF(c1.y, c1.x);
-		double[] ecef2 = geoToECEF(c2.y, c2.x);
-
-		double dx = ecef1[0] - ecef2[0];
-		double dy = ecef1[1] - ecef2[1];
-		double dz = ecef1[2] - ecef2[2];
-
-		return Math.sqrt(dx * dx + dy * dy + dz * dz);
-	}
-*/
     
-	/*************** Estructuras **************/// ===============================
+	// ===============================
 	// |       Estructuras           |
 	// ===============================
     public static class GridPoint {
@@ -925,7 +883,6 @@ private Geometry extractGeometryFromFeature(SimpleFeature feature) {
 	// ===============================
 	// |          Getters            |
 	// ===============================
-	/*************** Getters ***************/
 public ZoneAgent getInitialZone() {
 		return initialZone;
 	}

@@ -12,7 +12,7 @@ public class LegendHandler {
 
     /**
      * Inicia el proceso para agregar la leyenda al panel de visualización.
-     * @param context Contexto de la simulación (no usado directamente, pero incluido por compatibilidad)
+     * @param context Contexto de la simulación
      */
     public void addLegendToDisplay(Context context) {
         SwingUtilities.invokeLater(() -> {

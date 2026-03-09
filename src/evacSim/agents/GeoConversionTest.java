@@ -1,114 +1,162 @@
 package evacSim.agents;
 
 import org.locationtech.jts.geom.Coordinate;
-import repast.simphony.space.grid.GridPoint;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.Locale;
 
 public class GeoConversionTest {
 
-	private static final String CITY_NAME = "Viña del mar";
-	// === PUNTOS A COMPARAR (puedes cambiarlos o pasarlos por args) ===
+    private static final String CITY_NAME = "Arica";
 
-	private static final double LAT1 = -33.0192943073785;
-	private static final double LON1 = -71.5522698210275;
+    public static void main(String[] args) {
+        System.out.println("=== PRUEBA AUTOMÁTICA DE DISTANCIAS: GEO → ENU → GEO ===");
+        System.out.println("Ciudad: " + CITY_NAME + "\n");
 
-	private static final double LAT2 = -33.01934890614157;
-	private static final double LON2 = -71.55119763066084;
+        // Punto inicial en Viña del Mar (debe estar DENTRO del bbox del mapa)
+        double latInicial = -18.46657790987584;
+        double lonInicial = -70.29835853223453;
+        
+        System.out.printf("Punto inicial: %.10f, %.10f\n", latInicial, lonInicial);
+        System.out.printf("CELL_SIZE_METERS: %.3f m\n\n", ContextCreator.CELL_SIZE_METERS); 
 
-	public static void main(String[] args) {
-		double lat1 = LAT1, lon1 = LON1, lat2 = LAT2, lon2 = LON2;
-		String city = CITY_NAME;
+        // Distancias a probar (en metros)
+        double[] distancias = {10, 50, 100, 500, 1000, 5000, 10000};
+        
+        // Direcciones a probar (en grados)
+        double[] direcciones = {0, 45, 90, 180, 270};
+        String[] nombresDireccion = {"Norte", "Noreste", "Este", "Sur", "Oeste"};
 
-		// Permitir pasar 4 argumentos: lat1 lon1 lat2 lon2
-		if (args != null && args.length == 4) {
-			lat1 = Double.parseDouble(args[0]);
-			lon1 = Double.parseDouble(args[1]);
-			lat2 = Double.parseDouble(args[2]);
-			lon2 = Double.parseDouble(args[3]);
-		}
+        // Crear/limpiar archivo
+        inicializarArchivo();
 
-		System.out.println("=== TEST: Dos coordenadas GEO -> GRID y comparación de distancias ===");
-		System.out.printf("Punto A (lat,lon): %.8f, %.8f%n", lat1, lon1);
-		System.out.printf("Punto B (lat,lon): %.8f, %.8f%n", lat2, lon2);
+        // Ejecutar todas las combinaciones
+        int contador = 0;
+        for (double distancia : distancias) {
+            for (int i = 0; i < direcciones.length; i++) {
+                double direccion = direcciones[i];
+                String nombre = nombresDireccion[i];
+                
+                contador++;
+                System.out.printf("--- Prueba %d: %.0f m hacia %s (%.0f°) ---\n", 
+                                contador, distancia, nombre, direccion);
+                
+                ejecutarPrueba(latInicial, lonInicial, distancia, direccion, nombre);
+                System.out.println();
+            }
+        }
 
-		// 1) GEO -> GRID
-		evacSim.agents.ContextCreator.GridPoint gA = ContextCreator.mapGeoToGrid(new Coordinate(lon1, lat1));
-		evacSim.agents.ContextCreator.GridPoint gB = ContextCreator.mapGeoToGrid(new Coordinate(lon2, lat2));
+        System.out.println("=== PRUEBAS COMPLETADAS ===");
+        System.out.printf("Total de pruebas: %d\n", contador);
+        System.out.println("✅ Todos los resultados guardados en prueba_distancias.csv");
+        System.out.println("\nAhora puedes:");
+        System.out.println("1. Abrir prueba_distancias.csv en Excel");
+        System.out.println("2. Verificar algunos puntos en Google Maps");
+        System.out.println("3. Agregar una columna 'Distancia_Google_m' con tus mediciones");
+    }
 
-		System.out.printf("Grid A (x,y): %d, %d%n", gA.getX(), gA.getY());
-		System.out.printf("Grid B (x,y): %d, %d%n", gB.getX(), gB.getY());
+    private static void ejecutarPrueba(double latInicial, double lonInicial, 
+                                      double distanciaMetros, double direccionGrados,
+                                      String nombreDireccion) {
+        // 1) Convertir punto inicial de GEO a GRID
+        ContextCreator.GridPoint gridInicial = ContextCreator.mapGeoToGrid(
+            new Coordinate(lonInicial, latInicial)
+        );
 
-		// 2) Δx, Δy y distancias por grilla
-		int dx = gB.getX() - gA.getX();
-		int dy = gB.getY() - gA.getY();
-		double cellSize = ContextCreator.CELL_SIZE_METERS;
+        // 2) Calcular desplazamiento en ENU (metros)
+        double anguloRad = Math.toRadians(direccionGrados);
+        double deltaEast = distanciaMetros * Math.sin(anguloRad);
+        double deltaNorth = distanciaMetros * Math.cos(anguloRad);
 
-		double distCells = Math.sqrt(dx * dx + dy * dy);
-		double distMetersGrid = distCells * cellSize;
+        // 3) Convertir desplazamiento de metros a celdas
+        int deltaCeldasX = (int) Math.round(deltaEast / ContextCreator.CELL_SIZE_METERS);
+        int deltaCeldasY = (int) Math.round(deltaNorth / ContextCreator.CELL_SIZE_METERS);
 
-		System.out.println("\n=== Distancias en GRID ===");
-		System.out.printf("Δx (celdas): %d; Δy (celdas): %d%n", dx, dy);
-		System.out.printf("Distancia euclidiana (celdas): %.3f%n", distCells);
-		System.out.printf("CELL_SIZE_METERS: %.3f m%n", cellSize);
-		System.out.printf("Distancia por grilla (m): %.3f%n", distMetersGrid);
-		System.out.printf("Componentes E-O (m): %.3f; N-S (m): %.3f%n", Math.abs(dx) * cellSize,
-				Math.abs(dy) * cellSize);
+        // 4) Calcular punto final en GRID
+        int gridFinalX = gridInicial.getX() + deltaCeldasX;
+        int gridFinalY = gridInicial.getY() + deltaCeldasY;
 
-		// 3) GRID -> GEO (reconstrucción de ambos, útil para copiar en Google)
-		Coordinate backA = ContextCreator.mapGridToGeo(gA.getX(), gA.getY());
-		Coordinate backB = ContextCreator.mapGridToGeo(gB.getX(), gB.getY());
-		System.out.println("\n=== Copiar en Google Maps (Medir distancia) ===");
-		System.out.printf("A: %.8f, %.8f%n", backA.y, backA.x);
-		System.out.printf("B: %.8f, %.8f%n", backB.y, backB.x);
+        // 5) Convertir punto final de GRID a GEO
+        Coordinate coordFinal = ContextCreator.mapGridToGeo(gridFinalX, gridFinalY);
+        double latFinal = coordFinal.y;
+        double lonFinal = coordFinal.x;
 
-		// 4) (Opcional) Distancia geodésica Haversine (WGS84) para referencia
-		double distHaversine = 100.22;
-		System.out.println("\n=== Referencia geodésica (Haversine) ===");
-		System.out.printf("Distancia Haversine (m): %.3f%n", distHaversine);
+        // 6) Calcular distancias
+        double distanciaSimulador = Math.sqrt(
+            Math.pow(deltaCeldasX * ContextCreator.CELL_SIZE_METERS, 2) + 
+            Math.pow(deltaCeldasY * ContextCreator.CELL_SIZE_METERS, 2)
+        );
 
-		// 5) Error relativo vs Haversine (aprox. a lo que verás en Google)
-		double errAbs = Math.abs(distMetersGrid - distHaversine);
-		double errPct = (distHaversine > 0) ? (errAbs / distHaversine * 100.0) : 0.0;
-		System.out.printf("Error absoluto (m): %.3f%n", errAbs);
-		System.out.printf("Error relativo (%%): %.3f%n", errPct);
+        double distanciaHaversine = haversineDistance(latInicial, lonInicial, latFinal, lonFinal);
 
-		// 6) Guardar en un archivo CSV acumulativo (append)
-		String csvLine = String.format(Locale.US, "%s,%.8f,%.8f,%.8f,%.8f,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f%n", city, lat1,
-				lon1, lat2, lon2, dx, dy, cellSize, distMetersGrid, distHaversine, errAbs, errPct);
+        // Mostrar resultados en consola
+        System.out.printf("  Grid inicial: (%d, %d) → Grid final: (%d, %d)\n", 
+                         gridInicial.getX(), gridInicial.getY(), gridFinalX, gridFinalY);
+        System.out.printf("  Δ celdas: (%d, %d)\n", deltaCeldasX, deltaCeldasY);
+        System.out.printf("  Punto final: %.10f, %.10f\n", latFinal, lonFinal);
+        System.out.printf("  Distancia simulador: %.3f m\n", distanciaSimulador);
+        System.out.printf("  Distancia Haversine: %.3f m\n", distanciaHaversine);
 
-		String fileName = "geoConvTest_results.csv";
-		try (FileWriter fw = new FileWriter(fileName, true); PrintWriter pw = new PrintWriter(fw)) {
+        // 7) Guardar en CSV
+        guardarEnExcel(latInicial, lonInicial, latFinal, lonFinal, 
+                      distanciaSimulador, distanciaHaversine, direccionGrados, nombreDireccion);
+    }
 
-			// Si el archivo está vacío, agrega cabecera
-			if (new java.io.File(fileName).length() == 0) {
-				pw.println("city,lat1,lon1,lat2,lon2,dx,dy,cell_size,dist_grid_m,dist_haversine_m,err_abs_m,err_pct");
-			}
+    private static void inicializarArchivo() {
+        String archivo = "prueba_distancias.csv";
+        try {
+            java.io.File file = new java.io.File(archivo);
+            
+            // Solo crear cabecera si el archivo NO existe o está vacío
+            if (!file.exists() || file.length() == 0) {
+                FileWriter fw = new FileWriter(archivo, false);
+                fw.write("Ciudad,Lat_Inicial,Lon_Inicial,Lat_Final,Lon_Final," +
+                        "Distancia_Simulador_m,Distancia_Haversine_m,Direccion_grados,Direccion_nombre\n");
+                fw.close();
+                System.out.println("✅ Archivo creado con cabecera: " + archivo + "\n");
+            } else {
+                System.out.println("✅ Archivo existente encontrado. Se agregarán datos al final.\n");
+            }
+        } catch (IOException e) {
+            System.err.println("❌ Error al verificar archivo: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 
-			pw.print(csvLine);
-			System.out.println("\n✅ Línea guardada en " + fileName);
+    private static void guardarEnExcel(double lat1, double lon1, double lat2, double lon2,
+                                      double distSimulador, double distHaversine, 
+                                      double direccion, String nombreDireccion) {
+        String archivo = "prueba_distancias.csv";
+        
+        try {
+            FileWriter fw = new FileWriter(archivo, true); // true = append
+            
+            String linea = String.format(Locale.US, 
+                "%s,%.10f,%.10f,%.10f,%.10f,%.3f,%.3f,%.1f,%s\n",
+                CITY_NAME, lat1, lon1, lat2, lon2, distSimulador, distHaversine, 
+                direccion, nombreDireccion);
+            
+            fw.write(linea);
+            fw.close();
+            
+        } catch (IOException e) {
+            System.err.println("❌ Error al guardar: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 
-		} catch (IOException e) {
-			System.err.println("❌ Error al escribir el archivo: " + e.getMessage());
-		}
-	}
+    private static double haversineDistance(double lat1, double lon1, double lat2, double lon2) {
+        final double R = 6371008.8; // Radio de la Tierra en metros (WGS84)
+        double phi1 = Math.toRadians(lat1);
+        double phi2 = Math.toRadians(lat2);
+        double dphi = Math.toRadians(lat2 - lat1);
+        double dlambda = Math.toRadians(lon2 - lon1);
 
-	/**
-	 * Distancia Haversine (m) con radio WGS84 medio ~ 6371e3 m. Es una buena
-	 * aproximación a lo que te mostrará Google en distancias "medir".
-	 */
-	private static double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
-		final double R = 6371008.8; // radio medio de la Tierra en metros (WGS84)
-		double phi1 = Math.toRadians(lat1);
-		double phi2 = Math.toRadians(lat2);
-		double dphi = Math.toRadians(lat2 - lat1);
-		double dlambda = Math.toRadians(lon2 - lon1);
-
-		double a = Math.sin(dphi / 2) * Math.sin(dphi / 2)
-				+ Math.cos(phi1) * Math.cos(phi2) * Math.sin(dlambda / 2) * Math.sin(dlambda / 2);
-		double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-		return R * c;
-	}
+        double a = Math.sin(dphi / 2) * Math.sin(dphi / 2) +
+                  Math.cos(phi1) * Math.cos(phi2) * 
+                  Math.sin(dlambda / 2) * Math.sin(dlambda / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        
+        return R * c;
+    }
 }
