@@ -10,7 +10,7 @@ Los archivos generados son utilizados posteriormente por el modelo de simulació
 
 ## Flujo de procesamiento
 
- ![Flujo](/docs/diagrama_secuencia_preprocesamiento.png)
+ ![Flujo](docs/diagrama_secuencia_preprocesamiento.png)
 
 ---
 
@@ -81,4 +81,4 @@ Este archivo permite visualizar las zonas y la red de carreteras generadas.
 
 Ejemplo:
 
-![Mapa de zonas de evacuación](/docs/mapa_ejemplo.png)
+![Mapa de zonas de evacuación](docs/mapa_ejemplo.png)
