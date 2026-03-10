@@ -47,8 +47,6 @@ Este archivo indica a Repast qué componentes deben cargarse al iniciar la simul
 - acciones de generación de gráficos
 - datasets utilizados durante la simulación
 
----
-
 ### displays
 
 Los archivos `display` definen cómo se visualiza la simulación en la interfaz de Repast.
@@ -57,13 +55,9 @@ Los archivos `display` definen cómo se visualiza la simulación en la interfaz 
 - `display_2` corresponde al display original del proyecto.
 - `display_3` es el display principal utilizado en la simulación, donde se visualiza el mapa y el movimiento de los agentes.
 
----
-
 ### data loader
 
 Define la clase encargada de inicializar el modelo y crear el contexto de simulación.
-
----
 
 ### user_path.xml
 
